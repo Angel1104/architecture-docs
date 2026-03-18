@@ -79,7 +79,17 @@ All other decisions are made automatically.
    - `change` / `refactor` → lean 3-section spec (§1 Problem Statement, §7 ACs, §8 Error Scenarios)
 4. Run multi-agent spec review (domain-analyst, sw-architect, security-engineer)
 5. Resolve all blockers autonomously
-6. **STOP** only if a business decision is needed → ask, wait, continue
+6. **STOP — Spec approval required.**
+   Present the complete spec, then ask:
+   > "Spec ready for CR-<cr-id>. Before you confirm, check:
+   > - [ ] Acceptance criteria match your intent exactly — not vague, not missing cases
+   > - [ ] Out-of-scope section is correct — nothing over-engineered, nothing missing
+   > - [ ] Error scenarios cover your real edge cases
+   > - [ ] No open business questions remain
+   >
+   > Reply **'approved'** to proceed, or tell me what to change."
+
+   Wait. Apply any corrections. Re-present if changed.
 7. Lock the approved spec at `specs/cr/<cr-id>.spec.md`
 8. Update CR status: OPEN → SPECCED
 9. Report: "Spec approved. Moving to [plan / build]."
@@ -164,11 +174,17 @@ All other decisions are made automatically.
 
 **Follow-up CRs:** [only if any]
 
-**Confirm closure?**
-
 ---
 
-6. **STOP** → wait for human confirmation
+6. **STOP — Closure confirmation required.**
+   > "Ready to close CR-<cr-id>. Before you confirm:
+   > - [ ] You've manually tested the happy path in your environment
+   > - [ ] The AC table above matches what was actually built
+   > - [ ] Any follow-up CRs are noted and you know who owns them
+   >
+   > Reply **'close it'** to formally close, or raise anything you want addressed first."
+
+   Wait for confirmation.
 7. On confirm:
    - Append `## Closure` section to `specs/cr/<cr-id>.cr.md`
    - Update CR status: BUILT → CLOSED

@@ -6,6 +6,25 @@ A default may only be overridden with an explicit, documented business reason re
 
 ---
 
+## TL;DR — Critical Defaults (read this first if context is compressed)
+
+| # | Rule | Detail |
+|---|------|--------|
+| 1 | Domain: pure Python | No FastAPI, no SQLAlchemy, no boto3 in `app/domain/`. Zero external dependencies. |
+| 2 | OIDC only | Every endpoint validates GCP OIDC token — no Firebase, no API keys for auth |
+| 3 | `tenant_id` from OIDC context | Never from request body or query params — comes from the validated OIDC token claims |
+| 4 | Cloud Tasks for side effects | Direct calls to notification/webhook/email services from application layer are forbidden — always dispatch a Cloud Task |
+| 5 | Fake adapters for unit tests | `FakeDocumentRepository(IDocumentRepository)` — never mock SQLAlchemy or boto3 sessions directly |
+| 6 | RFC 7807 errors at adapter boundary | Domain exceptions map to `type/title/status/detail/traceId` — never expose raw Python exceptions |
+| 7 | Pydantic at inbound boundary | ALL external input validated via Pydantic models at the inbound adapter — never inside domain or application layers |
+| 8 | Cursor pagination only | Never offset/skip — always `cursor + limit`, return `{data, next_cursor, has_more}` |
+| 9 | Expand/contract migrations | Never destructive schema changes in the same deploy as code removal — always two deploys |
+| 10 | RS256 JWT | `alg:none` explicitly rejected at the adapter boundary — fail fast, never silently accept |
+
+> Full rules below. TL;DR is a summary — the sections below are authoritative.
+
+---
+
 ## How Agents Must Use This Document
 
 When `/spec-init` Phase 3 or `/spec-revise` Phase 2 encounters any decision listed below, apply the default and annotate it with `(default)`. Do **NOT** ask the user. Do **NOT** leave it as TBD.

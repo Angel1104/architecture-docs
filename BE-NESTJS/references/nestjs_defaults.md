@@ -5,6 +5,25 @@
 
 ---
 
+## TL;DR — Critical Defaults (read this first if context is compressed)
+
+| # | Rule | Detail |
+|---|------|--------|
+| 1 | Domain layer: pure TypeScript | No NestJS, no Prisma, no Firebase, no HTTP imports in `domain/`. Zero framework dependencies. |
+| 2 | RLS on every tenant query | Every query to a multi-tenant table inside `prisma.withTenant(tenantId, async (tx) => {...})` — never query without it |
+| 3 | `tenant_id` from auth only | Comes from authenticated user in Neon — never from request body or query params |
+| 4 | RFC 7807 errors | `type/title/status/detail/traceId` — never plain strings, never raw `Error`, never NestJS `HttpException` in domain |
+| 5 | Cloud Tasks for side effects | Never call email/notification/webhook services directly from use cases — always dispatch a Cloud Task |
+| 6 | Fake repos for use case tests | `FakeUserRepository implements IUserRepository` — never mock Prisma directly in unit tests |
+| 7 | Cursor pagination | `PaginatedResponse<T>` with Prisma `take+1` pattern — never offset/skip pagination |
+| 8 | OIDC for Cloud Tasks → FastAPI | Use GCP OIDC service account token — never Firebase Auth for this boundary |
+| 9 | Expand/contract migrations | Never drop a column in the same deploy that removes the code using it — always two deploys |
+| 10 | `traceId` in every log | Every `logger.log/warn/error` call includes `{ traceId }` from OpenTelemetry context |
+
+> Full rules below. TL;DR is a summary — the sections below are authoritative.
+
+---
+
 ## 1. Hexagonal Layer Rules
 
 Every NestJS module follows this four-layer structure:

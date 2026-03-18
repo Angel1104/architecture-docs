@@ -5,6 +5,25 @@
 
 ---
 
+## TL;DR — Critical Defaults (read this first if context is compressed)
+
+| # | Rule | Detail |
+|---|------|--------|
+| 1 | AuthService abstraction | Feature code never imports auth SDK directly. Only `core/auth/` touches the auth provider SDK. |
+| 2 | 3-state auth | `initializing / authenticated / unauthenticated` — route guards must handle all 3, never redirect during `initializing` |
+| 3 | Domain layer: pure TypeScript | No React, no Next.js, no auth SDK, no `fetch` in `domain/`. Zero framework dependencies. |
+| 4 | `'use client'` only when needed | Add only for: event handlers, useState/useEffect, AuthService calls, browser APIs. Default is Server Component. |
+| 5 | ApiClient for all HTTP | No raw `fetch()` in hooks or components. All calls go through `ApiClient`. |
+| 6 | ApiError for all errors | All errors typed as `ApiError` (RFC 7807). Never catch and render raw `Error.message`. |
+| 7 | Forms: react-hook-form + Zod | Map 422 `fieldErrors` from backend to form fields. Never use uncontrolled inputs or manual validation. |
+| 8 | State separation | Zustand for global client state — TanStack Query for server state. Never use Zustand to cache server data. |
+| 9 | Test tool by layer | Use case (pure logic) → FakeRepository. Hook/component → msw + React Testing Library. Never mix. |
+| 10 | Server Components by default | Every component is a Server Component unless it genuinely needs client-side behavior. |
+
+> Full rules below. TL;DR is a summary — the sections below are authoritative.
+
+---
+
 ## 1. Feature Folder Structure
 
 Every feature lives under `src/features/<name>/`. No exceptions.
@@ -475,9 +494,78 @@ src/features/<name>/__tests__/
 └── presentation/    # Component tests (RTL)
 ```
 
+### Fake Repository Pattern (for use case unit tests)
+
+Use a `FakeRepository` — not msw — when testing pure use case logic with no HTTP involved.
+
+```typescript
+// src/features/<name>/__tests__/fakes/FakeDocumentRepository.ts
+import type { IDocumentRepository } from '../../domain/repositories/IDocumentRepository'
+import type { Document } from '../../domain/entities/Document'
+import type { ApiError } from '@/core/errors/ApiError'
+
+export class FakeDocumentRepository implements IDocumentRepository {
+  private store = new Map<string, Document>()
+
+  async findById(id: string): Promise<Document> {
+    const doc = this.store.get(id)
+    if (!doc) throw { status: 404, title: 'Not found', type: 'not_found', detail: '' } satisfies ApiError
+    return doc
+  }
+
+  async list(): Promise<Document[]> {
+    return Array.from(this.store.values())
+  }
+
+  async create(data: Omit<Document, 'id'>): Promise<Document> {
+    const doc = { ...data, id: `fake-${this.store.size + 1}` }
+    this.store.set(doc.id, doc)
+    return doc
+  }
+
+  // Test helper — seed data before the test runs
+  seed(doc: Document): void { this.store.set(doc.id, doc) }
+  clear(): void { this.store.clear() }
+}
+```
+
+```typescript
+// Use case test — no msw, no HTTP, no renderHook
+describe('GetDocumentUseCase', () => {
+  it('returns document for the owner', async () => {
+    const repo = new FakeDocumentRepository()
+    repo.seed(buildDocument({ id: 'doc-1', userId: 'user-a' }))
+
+    const result = await new GetDocumentUseCase(repo).execute({ id: 'doc-1', userId: 'user-a' })
+    expect(result.id).toBe('doc-1')
+  })
+
+  it('throws 403 when user is not the owner', async () => {
+    const repo = new FakeDocumentRepository()
+    repo.seed(buildDocument({ id: 'doc-1', userId: 'user-a' }))
+
+    await expect(
+      new GetDocumentUseCase(repo).execute({ id: 'doc-1', userId: 'user-b' })
+    ).rejects.toMatchObject({ status: 403 })
+  })
+})
+```
+
+### Which test tool for which layer
+
+| Layer | Tool | Why |
+|-------|------|-----|
+| Use case (pure logic, no HTTP) | `FakeRepository` | Fast, isolated, tests business rules |
+| Hook / TanStack Query | msw + `renderHook` | Tests the HTTP + state lifecycle |
+| Component rendering | msw + React Testing Library | Tests what the user sees |
+| Form submission | msw + React Testing Library | Tests validation + server error mapping |
+
+**Rule:** Never use msw in use case tests. Never use FakeRepository in hook or component tests.
+
 ### Rules
 
 - **Never mock ApiClient directly** — use msw to intercept at network level
+- Use `FakeRepository` for use case unit tests — no HTTP, no msw
 - Test behavior the user sees — not internal implementation
 - Every authenticated feature has at least one user isolation test (user A cannot see user B's data)
 - Test file location: `src/features/<name>/__tests__/` (not scattered next to source files)

@@ -114,6 +114,7 @@ app/             → everything (composition root)
 | `/close <cr-id>` | Close | Verifies ACs, documents outcome, formally closes CR |
 | `/code-review [scope]` | Discovery | Multi-agent code audit → produces findings report → offers to create CR items |
 | `/cr <cr-id>` | Pipeline | Automated full pipeline: spec → plan → build → close |
+| `/status` | — | Shows all CRs: open, in progress, blocked, recently closed. No arguments. |
 | `/help` | — | Prints this command reference |
 
 ## Available Agents

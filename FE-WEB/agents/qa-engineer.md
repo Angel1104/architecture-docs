@@ -60,6 +60,88 @@ test('<action> when <condition> should <expected result>', () => {
 
 ---
 
+## Test Tool by Layer
+
+| Layer | Tool | Why |
+|-------|------|-----|
+| Use case (pure logic, no HTTP) | `FakeRepository` | Fast, isolated, tests only business rules |
+| Hook / TanStack Query | msw + `renderHook` | Tests HTTP + state lifecycle together |
+| Component rendering | msw + React Testing Library | Tests what the user sees |
+| Form submission | msw + React Testing Library | Tests validation + server error mapping |
+
+**Rule:** Never use msw in use case tests. Never use FakeRepository in hook or component tests.
+
+---
+
+## Fake Repository Pattern
+
+For use cases with pure business logic, use a `FakeRepository` — not msw, not mocked imports.
+
+```typescript
+// src/features/<name>/__tests__/fakes/FakeDocumentRepository.ts
+import type { IDocumentRepository } from '../../domain/repositories/IDocumentRepository'
+import type { Document } from '../../domain/entities/Document'
+import type { ApiError } from '@/core/errors/ApiError'
+
+export class FakeDocumentRepository implements IDocumentRepository {
+  private store = new Map<string, Document>()
+
+  async findById(id: string): Promise<Document> {
+    const doc = this.store.get(id)
+    if (!doc) throw { status: 404, title: 'Not found', type: 'not_found', detail: '' } satisfies ApiError
+    return doc
+  }
+
+  async list(): Promise<Document[]> {
+    return Array.from(this.store.values())
+  }
+
+  async create(data: Omit<Document, 'id'>): Promise<Document> {
+    const doc = { ...data, id: `fake-${this.store.size + 1}` }
+    this.store.set(doc.id, doc)
+    return doc
+  }
+
+  // Test helpers
+  seed(doc: Document): void { this.store.set(doc.id, doc) }
+  clear(): void { this.store.clear() }
+}
+```
+
+### Use case test example
+
+```typescript
+// src/features/<name>/__tests__/domain/GetDocumentUseCase.test.ts
+describe('GetDocumentUseCase', () => {
+  let repo: FakeDocumentRepository
+
+  beforeEach(() => {
+    repo = new FakeDocumentRepository()
+  })
+
+  it('returns document for the owner', async () => {
+    repo.seed(buildDocument({ id: 'doc-1', userId: 'user-a' }))
+    const result = await new GetDocumentUseCase(repo).execute({ id: 'doc-1', userId: 'user-a' })
+    expect(result.id).toBe('doc-1')
+  })
+
+  it('throws 403 when user is not the owner', async () => {
+    repo.seed(buildDocument({ id: 'doc-1', userId: 'user-a' }))
+    await expect(
+      new GetDocumentUseCase(repo).execute({ id: 'doc-1', userId: 'user-b' })
+    ).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('throws 404 when document does not exist', async () => {
+    await expect(
+      new GetDocumentUseCase(repo).execute({ id: 'missing', userId: 'user-a' })
+    ).rejects.toMatchObject({ status: 404 })
+  })
+})
+```
+
+---
+
 ## Test Generation Process
 
 ### Step 1: Shared Fixtures (test setup)

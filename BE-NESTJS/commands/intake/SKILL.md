@@ -200,8 +200,8 @@ Wait for the developer to confirm, correct, or answer open questions. Incorporat
 Once the developer confirms, generate the CR item and store it.
 
 ### CR-ID generation
-Format: `YYMMDD-HHMMSS` — use the current date and time.
-Example: `260311-143022`
+Format: `YYMMDD-HHMMSS-<3 random alphanumeric chars (a-z0-9)>` — use current date and time plus a random suffix to prevent collisions.
+Example: `260311-143022-a7k`
 
 ### CR item file
 

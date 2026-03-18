@@ -40,6 +40,7 @@ Critical incident fast track:
 | `/build <cr-id>` | Build | TDD: red → green per layer. Code review. Containment for Critical/Security. Direct fix for bugs. |
 | `/close <cr-id>` | Close | Verify ACs, update project map, document decisions, formal closure. |
 | `/code-review` | Discovery | Multi-agent audit of existing NestJS code. Produces findings report. |
+| `/status` | — | Shows all CRs: open, in progress, blocked, recently closed. No arguments. |
 
 ### CR Types & Tracks
 

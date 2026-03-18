@@ -5,6 +5,25 @@
 
 ---
 
+## TL;DR — Critical Defaults (read this first if context is compressed)
+
+| # | Rule | Detail |
+|---|------|--------|
+| 1 | Domain layer: pure Dart | No Flutter SDK, no Dio, no auth SDK imports anywhere in `domain/` |
+| 2 | AuthService abstraction | Auth interceptor calls `authService.getToken()` / `refreshToken()` / `logout()` — never calls auth SDK directly |
+| 3 | AppError sealed class | No `Either`, no `dartz`. `DioException` never crosses the data layer boundary — always map to `AppError` |
+| 4 | 3-state auth | `initializing / authenticated / unauthenticated` — GoRouter guard must handle all 3, never redirect during `initializing` |
+| 5 | FakeRepository for use case tests | `FakeRepository implements IRepository` for domain/use case tests — `mocktail` ONLY for controller tests (mocking use cases) |
+| 6 | StateNotifier error state | Error state uses `AppError`, never `String`. `@freezed` sealed states: `initial / loading / loaded(data) / error(AppError)` |
+| 7 | Online-first | No Hive/sqflite/Drift in v1. Show `ConnectivityError` state when offline — never silently fail |
+| 8 | HTTP contract | Bearer token via `AuthService.getToken()`, `X-Trace-ID: <uuid>` per request, RFC 7807 errors from backend |
+| 9 | Cursor pagination | `{data, nextCursor, hasMore}` — never offset/page number |
+| 10 | Just-in-time permissions | Request at the moment of use — never at app start, never pre-emptively |
+
+> Full rules below. TL;DR is a summary — the sections below are authoritative.
+
+---
+
 ## 1. Architecture — Clean Architecture + Riverpod
 
 | Decision | Default |
