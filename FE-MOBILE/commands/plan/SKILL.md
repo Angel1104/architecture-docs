@@ -197,9 +197,9 @@ Create test files under `test/features/<feature>/` proportional to the CR.
 
 **TDD rule — tests are written complete, not as skeletons.**
 Each test case must have:
-- A real `blocTest` or `test` name from the AC (GIVEN/WHEN/THEN language)
-- Full test body: arrange (fake repository or mock), act (BLoC event), assert (BLoC state)
-- FakeRepository implementations that implement the domain repository interface — NEVER mockito.mock of a repository
+- A real `test` or controller test name from the AC (GIVEN/WHEN/THEN language)
+- Full test body: arrange (FakeRepository or mocktail mock), act (controller method), assert (controller state)
+- FakeRepository implementations that implement the domain repository interface — NEVER mocktail.Mock of a repository
 - The test MUST fail (red) before implementation — if it passes immediately, it is not a real test
 
 Do NOT use placeholder comments or empty test bodies.
@@ -210,21 +210,21 @@ The tests written here are the actual tests that will gate the build.
 For each domain repository interface, create a fake in `test/features/<feature>/fakes/`:
 
 ```dart
-// test/features/<feature>/fakes/fake_feature_repository.dart
-// In-memory fake — implements the domain interface, used in BLoC tests
-// Never use Mockito for domain repositories — fakes give better guarantees
+// test/fakes/fake_feature_repository.dart
+// In-memory fake — implements the domain interface, used in use case tests
+// Never use mocktail.Mock for domain repositories — fakes guarantee contract compliance
 
-class FakeFeatureRepository implements FeatureRepository {
+class FakeFeatureRepository implements IFeatureRepository {
   final Map<String, List<FeatureItem>> _store = {};
 
   @override
-  Future<List<FeatureItem>> getItems(String userId) async {
+  Future<List<FeatureItem>> getItems({required String userId}) async {
     return _store[userId] ?? [];
   }
 
   // Test helper
-  void seed({required String userId, required List<dynamic> items}) {
-    _store[userId] = items.map((i) => FeatureItem(id: i)).toList();
+  void seed({required String userId, required List<FeatureItem> items}) {
+    _store[userId] = items;
   }
 }
 ```
@@ -232,50 +232,40 @@ class FakeFeatureRepository implements FeatureRepository {
 For each acceptance criterion in the spec, generate a complete test:
 
 ```dart
-// test/features/<feature>/application/blocs/<feature>_bloc_test.dart
-// TDD: This test is written BEFORE the BLoC implementation.
-// It will fail (red) until the BLoC is implemented.
+// test/features/<feature>/domain/<feature>_usecase_test.dart
+// TDD: This test is written BEFORE the use case implementation.
+// It will fail (red) until the use case is implemented.
 
-import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:<app>/features/<feature>/application/blocs/<feature>_bloc.dart';
-import '../fakes/fake_<feature>_repository.dart';
+import 'package:<app>/features/<feature>/domain/usecases/get_feature_usecase.dart';
+import '../../../fakes/fake_feature_repository.dart';
 
 void main() {
-  late FeatureBloc bloc;
   late FakeFeatureRepository repository;
+  late GetFeatureUseCase useCase;
 
   setUp(() {
     repository = FakeFeatureRepository();
-    bloc = FeatureBloc(repository: repository);
+    useCase = GetFeatureUseCase(repository);
   });
 
-  tearDown(() => bloc.close());
-
   // AC-1: GIVEN an authenticated user WHEN they load the feature THEN data is shown
-  blocTest<FeatureBloc, FeatureState>(
-    'emits [loading, loaded] when LoadFeature succeeds',
-    build: () => bloc,
-    act: (b) => b.add(LoadFeature(userId: 'user-1')),
-    expect: () => [
-      const FeatureState.loading(),
-      isA<FeatureState>().having((s) => s.items, 'items', isNotEmpty),
-    ],
-  );
+  test('returns items when repository has data for the user', () async {
+    repository.seed(userId: 'user-1', items: [tFeatureItem]);
+
+    final result = await useCase.execute(userId: 'user-1');
+
+    expect(result, contains(tFeatureItem));
+  });
 
   // User isolation — mandatory
-  blocTest<FeatureBloc, FeatureState>(
-    'only loads data for the authenticated userId — never another user data',
-    build: () {
-      repository.seed(userId: 'user-2', items: ['other-user-data']);
-      return bloc;
-    },
-    act: (b) => b.add(LoadFeature(userId: 'user-1')),
-    expect: () => [
-      const FeatureState.loading(),
-      const FeatureState.loaded(items: []), // user-1 has no data
-    ],
-  );
+  test('returns only items for the requesting user — never another user data', () async {
+    repository.seed(userId: 'user-2', items: [tFeatureItem]);
+
+    final result = await useCase.execute(userId: 'user-1');
+
+    expect(result, isEmpty); // user-1 has no data
+  });
 }
 ```
 
@@ -286,8 +276,8 @@ For a refactor CR: skip test generation, note that existing tests cover behavior
 ### Test separation: unit vs integration
 
 **Unit tests** (always, run in CI):
-- BLoC tests with `FakeRepository` — no real HTTP
-- Use case tests — pure Dart
+- Use case tests with `FakeRepository` — pure Dart, no HTTP
+- Controller tests with `mocktail` mocking use cases
 
 **Widget/integration tests** (optional, heavier):
 - Full widget tests with `pumpWidget` + fake provider
@@ -296,7 +286,7 @@ For a refactor CR: skip test generation, note that existing tests cover behavior
 flutter test test/features/<feature>/presentation/
 ```
 
-Never use Mockito for domain repository interfaces — always use `FakeRepository` classes that implement the interface. Mockito is only for external services (Firebase, Dio interceptors) where a fake would be too complex.
+Never use `mocktail.Mock` for domain repository interfaces — always use `FakeRepository` classes that implement the interface. `mocktail` is only for mocking use cases in controller tests.
 
 ---
 

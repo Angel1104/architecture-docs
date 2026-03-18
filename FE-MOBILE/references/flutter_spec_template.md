@@ -1,6 +1,6 @@
 # Flutter Feature Specification Template
 
-This document defines the canonical format for **Flutter mobile feature** specifications at comocom. Use this template when the primary deliverable is a Flutter screen, flow, or mobile capability.
+This document defines the canonical format for **Flutter mobile feature** specifications. Use this template when the primary deliverable is a Flutter screen, flow, or mobile capability.
 
 For backend API features, use `spec_template.md` instead.
 For full-stack features (new backend API + Flutter UI), use both templates and link them.
@@ -29,8 +29,8 @@ Every Flutter spec MUST contain all 10 sections. A spec missing any section cann
 - Which feature domain does this belong to? (e.g., Agent Management, Billing, Onboarding)
 - What screens / UI state does this feature OWN?
 - What does it DEPEND ON from the backend? (which API spec)
-- What does it DEPEND ON from other Flutter features? (shared BLoCs, shared widgets, navigation state)
-- What events does it PUBLISH for other features to react to? (e.g., `AgentHiredEvent` → refresh list screen)
+- What does it DEPEND ON from other Flutter features? (shared providers, shared widgets, navigation state)
+- What state does it PUBLISH for other features to react to? (e.g., via a shared provider or callback)
 
 ### 3. Screens & Entry Points
 Every UI surface this feature introduces or modifies. For each:
@@ -42,48 +42,43 @@ Every UI surface this feature introduces or modifies. For each:
 | Screen Name | Route Path | Entry Trigger | Auth Required | Role | Pre-fetch Data |
 |-------------|------------|---------------|---------------|------|----------------|
 
-> Rule: Every screen that displays tenant-specific data must verify the user is authenticated before rendering. Use the auth guard in GoRouter.
+> Rule: Every screen that displays user-specific data must verify the user is authenticated before rendering. Use the auth guard in GoRouter. The guard must respect the `initializing` state.
 
 ### 4. Backend API Dependencies
 Every backend endpoint this feature calls, plus local device dependencies. For each API call:
 - HTTP method + path
 - Purpose
 - Auth: Bearer JWT required?
-- Which BLoC/use case owns this call?
+- Which controller/use case owns this call?
 
 | Endpoint | Method | Purpose | Auth | Owned By |
 |----------|--------|---------|------|----------|
-
-**Local Storage Dependencies**
-
-| Storage Type | Key / Collection | Data Stored | Scoped To User? |
-|-------------|-----------------|-------------|-----------------|
-| FlutterSecureStorage | (key name) | (what) | Yes — cleared on logout |
-| Hive | (box name) | (what) | Yes — keyed by user_id |
-| SharedPreferences | (key name) | (what — non-sensitive only) | (yes/no) |
 
 **Device Service Dependencies**
 
 | Service | Purpose | Permission Required | When Requested |
 |---------|---------|---------------------|----------------|
 
-### 5. BLoC & State Contracts
-For each BLoC introduced by this feature:
+### 5. Controller & State Contracts
+For each Riverpod controller introduced by this feature:
 
-**[BLoCName]**
+**[ControllerName] (StateNotifier\<[Feature]State\>)**
 ```dart
-// Events
-abstract class [Feature]Event {}
-class Load[Feature] extends [Feature]Event { /* fields */ }
-class Submit[Feature] extends [Feature]Event { /* fields */ }
-
-// States (freezed sealed class)
+// State (freezed sealed class)
 @freezed
 class [Feature]State with _$[Feature]State {
   const factory [Feature]State.initial() = _Initial;
   const factory [Feature]State.loading() = _Loading;
   const factory [Feature]State.loaded([Feature]Data data) = _Loaded;
-  const factory [Feature]State.error(String message) = _Error;
+  const factory [Feature]State.error(AppError error) = _Error;
+}
+```
+
+**Controller methods** (one per user action):
+```dart
+class [Feature]Controller extends StateNotifier<[Feature]State> {
+  Future<void> load(String userId);
+  Future<void> submit([Feature]Params params);
 }
 ```
 
@@ -96,7 +91,7 @@ class [Feature]Response with _$[Feature]Response {
 }
 ```
 
-**Domain Entity** (immutable, pure Dart — what the BLoC exposes to the UI)
+**Domain Entity** (immutable, pure Dart — what the controller exposes to the UI)
 ```dart
 @freezed
 class [Feature]Data with _$[Feature]Data {
@@ -104,19 +99,18 @@ class [Feature]Data with _$[Feature]Data {
 }
 ```
 
-### 6. Auth & Tenant Context
-- **Token storage**: Access token and refresh token stored in `FlutterSecureStorage` only (never SharedPreferences)
-- **Token injection**: Auth interceptor in Dio adds `Authorization: Bearer <token>` to every request. `tenant_uid` is a JWT claim — never passed manually.
-- **Token refresh**: On 401 response, auth interceptor attempts silent refresh. On refresh failure, navigates to login screen and clears all stored tokens.
-- **Role enforcement**: `tenant_role` claim from JWT controls which screens are accessible and which UI elements are visible. Role check in GoRouter redirect guard.
-- **Local data scoping**: Any locally cached data (Hive, SharedPreferences) must be keyed by `user_id` or cleared completely on logout.
-- **Logout**: Clears all tokens from FlutterSecureStorage, clears all Hive boxes, navigates to login root.
+### 6. Auth & User Context
+- **Token injection**: Auth interceptor in Dio adds `Authorization: Bearer <token>` via `FirebaseAuth.getIdToken()`. Never pass tokens manually from feature code.
+- **Token refresh**: On 401 response, auth interceptor calls `getIdToken(forceRefresh: true)` and retries once. On second 401, emits logout from `AuthService`.
+- **Auth state**: GoRouter guard reads `AppAuthState` from `authServiceProvider`. Redirects to `/splash` during `initializing`, to `/auth/login` when `unauthenticated`.
+- **User data scoping**: All API calls are scoped to the authenticated user via the Bearer token. The backend enforces RLS.
+- **No local token storage**: Firebase manages tokens internally. Feature code never stores or reads tokens.
 
 ### 7. Acceptance Criteria
 GIVEN/WHEN/THEN format. Each criterion must be:
 - **Specific**: no vague terms
 - **Measurable**: has a pass/fail condition
-- **Testable**: can be verified with a BLoC test, widget test, or integration test
+- **Testable**: can be verified with a use case test, controller test, widget test, or integration test
 - **Independent**: does not depend on other criteria's order
 
 - [ ] **AC-1**: GIVEN ... WHEN ... THEN ...
@@ -127,17 +121,17 @@ GIVEN/WHEN/THEN format. Each criterion must be:
 
 | Error | Trigger | User-Visible Behavior | Retryable? |
 |-------|---------|----------------------|------------|
-| No network connectivity | `DioException` — no connection | Show "No internet connection" banner; cache displayed if available | Yes — retry button |
-| Request timeout | `DioException` — receive timeout | Show "Request timed out" message | Yes — retry button |
-| 401 — expired token | Auth interceptor refresh fails | Silent refresh attempted; if fails → navigate to login | No — requires re-auth |
-| 401 — invalid token | Token tampered or from wrong issuer | Navigate to login; clear all tokens | No |
-| 403 — insufficient role | Role guard rejection | Show "You don't have access to this" screen | No |
-| 500 — server error | API returns 5xx | Show generic "Something went wrong" message; log error | Yes — retry button |
+| No network connectivity | `connectivity_plus` detects offline | Show "No internet connection" banner; disable action buttons | Yes — retry when connection restored |
+| Request timeout | Dio receive timeout | Controller emits `NetworkError` state | Yes — retry button |
+| 401 — token expired | Interceptor refresh fails | Silent refresh attempted; if fails → AuthService emits logout → GoRouter redirects to login | No — requires re-auth |
+| 403 — insufficient permission | Backend returns 403 | Controller emits `DomainError(status: 403)`, screen shows "You don't have access" | No |
+| 422 — validation error | Backend returns 422 with fieldErrors | Map `DomainError.fieldErrors` to form fields via controller state | No — fix input |
+| 500 — server error | API returns 5xx | Controller emits `NetworkError`, screen shows generic message with `traceId` | Yes — retry button |
 
 #### 8.2 Feature-Specific Errors
 
-| Error Condition | User-Visible Behavior | Screen / BLoC State |
-|-----------------|----------------------|---------------------|
+| Error Condition | User-Visible Behavior | Controller State |
+|-----------------|----------------------|-----------------|
 | (from feature rules/limits) | | |
 
 ### 9. Navigation & Side Effects
@@ -151,25 +145,25 @@ GIVEN/WHEN/THEN format. Each criterion must be:
 [Push notification tap]: [which screen it opens, with which data]
 ```
 
-**Cache Invalidation**
-| Action | Cache Invalidated | Reason |
-|--------|------------------|--------|
-| (e.g., agent hired successfully) | agent list cache | stale data |
+**State Invalidation**
+| Action | Provider Invalidated | Reason |
+|--------|---------------------|--------|
+| (e.g., item created successfully) | (list provider) | stale data |
 
-**Cross-feature Events**
-| Event Published | Consumed By | Purpose |
-|----------------|------------|---------|
-| (e.g., AgentStatusChanged) | AgentListBloc | Refresh list without full reload |
+**Side Effects**
+| Action | Side Effect | Async? |
+|--------|------------|--------|
+| (e.g., file upload) | (backend processes via Cloud Tasks) | Yes |
 
 ### 10. Non-Functional Requirements
 
-- **Offline behavior**: `[describe what works offline / what requires connectivity]`
+- **Offline behavior**: `[describe what works offline / what requires connectivity — default is online-first, no local persistence in v1]`
+- **Optimistic updates**: `[yes/no — if yes, describe the revert path]`
 - **Frame rate**: No jank during scroll or transition. Target 60fps / 120fps on capable devices.
 - **Initial load**: First meaningful render within 300ms of navigation. Use skeleton screens, not blank/spinner.
-- **Permissions**: `[list device permissions required and when the app requests them — always request at point-of-need, not on app launch]`
+- **Permissions**: `[list device permissions required and when the app requests them — always just-in-time, never on app launch]`
 - **Accessibility**: All interactive elements have semantic labels. Supports system font size scaling.
-- **App size impact**: No large asset bundles added without review. Images use cached_network_image.
-- **Error logging**: All unexpected errors reported to Firebase Crashlytics with non-PII context.
+- **App size impact**: No large asset bundles added without review. Images use `cached_network_image`.
 
 ---
 
@@ -179,10 +173,10 @@ A Flutter spec is ready for review when:
 
 - [ ] No "TBD", "TODO", "BUSINESS DECISION REQUIRED" remains
 - [ ] All screens listed with route paths and entry triggers
-- [ ] BLoC events and states defined (sealed classes)
+- [ ] Controller states defined (sealed classes with `AppError`)
 - [ ] Every API endpoint the feature calls is listed in §4
-- [ ] Local storage keys listed and scoped-to-user confirmed
-- [ ] Navigation flow diagrammed (§9)
+- [ ] No local storage dependencies (online-first v1) — or explicitly specified with justification
+- [ ] Navigation flow described (§9)
 - [ ] Offline behavior explicitly defined (not "TBD")
 - [ ] Device permissions listed with when-requested timing
 - [ ] Auth error scenarios covered (§8.1)

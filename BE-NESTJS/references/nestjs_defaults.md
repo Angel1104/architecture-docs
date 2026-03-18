@@ -372,3 +372,151 @@ Generates a `traceId` (UUID) for each request and:
 - Use `ConfigService` for all env var access in application code — never `process.env` directly
 - All env vars documented in `.env.example` with empty values and a comment
 - Validate required env vars at startup using a Zod schema in `src/shared/config/`
+
+---
+
+## 11. API Versioning
+
+### Default strategy: URL prefix versioning (`/v1/`)
+
+All public-facing endpoints are prefixed with `/v1/`. Internal endpoints (Cloud Tasks, FastAPI) use `/internal/` and are never versioned.
+
+```
+/v1/users            ← public, versioned
+/v1/documents        ← public, versioned
+/internal/tasks/<name>   ← Cloud Tasks handler, not versioned
+/internal/sync/<name>    ← FastAPI sync call, not versioned
+```
+
+### When to create `/v2/`
+
+Create a new version ONLY when the contract change is breaking and cannot be expressed as additive:
+
+| Additive change (no version bump needed) | Breaking change (requires /v2/) |
+|---|---|
+| New optional field in response | Removing a field from response |
+| New optional query parameter | Changing a field type or name |
+| New endpoint | Changing error codes clients depend on |
+| Adding enum values | Changing pagination shape |
+
+### Rules
+
+- New projects start at `/v1/` — never `/v0/` or no prefix
+- Versioning is at the route level, not per-module
+- Old versions stay alive for 1 full release cycle after the migration guide is published
+- Never use Accept-header versioning or query param versioning
+
+---
+
+## 12. Sync Side Effects — Cloud Tasks vs HTTP Sync
+
+Two patterns for side effects from use cases:
+
+### Pattern A: Async (Cloud Tasks) — default
+
+Use when the client does NOT need the result to complete the request:
+
+```typescript
+// In a use case — dispatch and continue:
+await this.cloudTasks.enqueue<ProcessDocumentTask>('process-document', {
+  taskType: 'process-document',
+  tenantId: input.tenantId,
+  triggeredBy: input.userId,
+  data: { documentId, fileKey },
+})
+// Response returns immediately — task runs in background
+```
+
+Endpoint receives task: `POST /internal/tasks/process-document` (OIDC guard).
+
+### Pattern B: Sync HTTP call to FastAPI — when result is needed immediately
+
+Use when the client needs the AI/ML result synchronously (e.g., document classification that determines next UI step):
+
+```typescript
+// In a use case — wait for FastAPI result:
+const result = await this.fastApiService.post<ClassifyResult>(
+  '/internal/sync/classify-document',
+  { documentId, fileKey, tenantId: input.tenantId }
+)
+```
+
+Endpoint at FastAPI: `POST /internal/sync/classify-document` (OIDC guard).
+
+### Decision table
+
+| Situation | Use |
+|---|---|
+| Email, notification, webhook after save | Cloud Tasks (async) |
+| AI/ML result that blocks the response | FastAPI sync HTTP |
+| Heavy processing user doesn't need to wait for | Cloud Tasks (async) |
+| Validation by AI before confirming to client | FastAPI sync HTTP |
+
+### Rules
+
+- Never call FastAPI endpoints directly from controllers — always from use cases
+- Both patterns use OIDC authentication — never Firebase Auth on `/internal/` endpoints
+- Cloud Task handlers in FastAPI are idempotent — Cloud Tasks retries on failure
+
+---
+
+## 13. Project Initialization Checklist
+
+### Repository setup
+- [ ] NestJS project created with `nest new`
+- [ ] TypeScript strict mode enabled in `tsconfig.json` (`"strict": true`)
+- [ ] `.env.example` with all required variables and comments
+- [ ] `.gitignore` includes `.env`, `node_modules/`, `dist/`
+- [ ] ESLint + Prettier configured
+
+### Folder structure
+- [ ] `src/shared/` created with: `domain/`, `application/`, `infrastructure/`, `interface/`, `config/`
+- [ ] `src/modules/` folder created (empty, ready for first module)
+- [ ] `src/shared/infrastructure/prisma/PrismaService.ts` with `withTenant()` helper
+- [ ] `src/shared/infrastructure/firebase/FirebaseAdminService.ts`
+- [ ] `src/shared/infrastructure/cloud-tasks/CloudTasksService.ts`
+- [ ] `src/shared/interface/interceptors/TraceInterceptor.ts`
+- [ ] `src/shared/interface/filters/DomainExceptionFilter.ts`
+- [ ] `src/shared/interface/pipes/ZodValidationPipe.ts`
+- [ ] `src/shared/interface/guards/FirebaseAuthGuard.ts`
+- [ ] `src/shared/interface/guards/OidcGuard.ts`
+
+### Auth + security
+- [ ] `FirebaseAuthGuard` uses `verifyIdToken()` — never manual JWT decode
+- [ ] Lazy user creation in guard: `findOrCreateByFirebaseUid()`
+- [ ] `OidcGuard` for all `/internal/` endpoints
+- [ ] No Firebase Auth guard on Cloud Tasks endpoints
+
+### Database
+- [ ] Prisma initialized: `npx prisma init`
+- [ ] `DATABASE_URL` points to Neon Postgres
+- [ ] RLS enabled on all multi-tenant tables from first migration
+- [ ] Every multi-tenant table has `tenant_id UUID NOT NULL` with index
+- [ ] `prisma.withTenant()` used for all tenant-scoped queries
+
+### Observability
+- [ ] OpenTelemetry SDK initialized in `src/instrumentation.ts` before any other import
+- [ ] `TraceInterceptor` generates `traceId` per request
+- [ ] `traceId` present in all log statements
+- [ ] `traceId` present in all RFC 7807 error responses
+- [ ] No `console.log` — structured JSON logging
+
+### Error handling
+- [ ] `DomainExceptionFilter` registered globally
+- [ ] `ZodValidationPipe` registered globally
+- [ ] All domain errors extend `DomainError` from `shared/domain/`
+- [ ] All HTTP errors use RFC 7807 format
+- [ ] No stack traces in error responses
+
+### Testing baseline
+- [ ] At least one module with fake repository pattern (no `jest.mock(PrismaService)`)
+- [ ] At least one tenant isolation test
+- [ ] `jest.config.ts` with separate unit and integration test suites
+- [ ] `npx jest --testPathPattern=unit` runs without database
+- [ ] `npx jest --testPathPattern=integration` hits real test database
+
+### Validation
+- [ ] `npx tsc --noEmit` passes
+- [ ] `npx jest --testPathPattern=unit` passes
+- [ ] `npx nest build` passes
+- [ ] App starts and health check endpoint returns 200

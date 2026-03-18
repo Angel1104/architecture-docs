@@ -63,9 +63,10 @@ Launch all three reviewer agents in parallel. Each gets the code files plus any 
 - Check that error types are domain exceptions, not HTTP exceptions
 
 **Flutter/Fullstack:**
-- Verify BLoC state is `@freezed` sealed with `initial/loading/loaded/error`
-- Verify use cases are single-responsibility
-- Verify `Either<Failure, T>` used consistently — no throwing across layer boundaries
+- Verify Riverpod state is `@freezed` sealed with `initial/loading/loaded/error(AppError)`
+- Verify use cases are single-responsibility — one per user action
+- Verify `AppError` (sealed class) used consistently — no raw exceptions crossing the data layer
+- Verify `AppAuthState.initializing` respected in GoRouter guard (no premature login redirect)
 - Check that presentation layer has no business rule logic
 
 **Infra:**
@@ -114,7 +115,7 @@ Launch all three reviewer agents in parallel. Each gets the code files plus any 
 
 **Flutter performance:**
 - Verify `const` constructors used where possible
-- Check for `setState` or BLoC emits inside `build()`
+- Check for `setState` or provider mutations inside `build()`
 - Verify `ListView.builder` used for dynamic lists
 
 **Standards (all platforms):**

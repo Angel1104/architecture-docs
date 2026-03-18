@@ -27,17 +27,17 @@ No stage may be skipped. Implementation without a reviewed spec is blocked by th
 ## 16 Principles
 
 1. **Spec first, code second.** Every feature starts as a specification in `specs/`. No implementation without a reviewed spec.
-2. **Tests before code.** Test cases (BLoC tests, widget tests, use case tests) are derived from acceptance criteria BEFORE implementation begins. Tests run RED before any implementation code is written.
-3. **The domain layer is sacred.** `lib/features/<f>/domain/` has ZERO Flutter SDK, Dio, Hive, or Firebase imports. Pure Dart only.
+2. **Tests before code.** Test cases (use case tests, controller tests, widget tests) are derived from acceptance criteria BEFORE implementation begins. Tests run RED before any implementation code is written.
+3. **The domain layer is sacred.** `lib/features/<f>/domain/` has ZERO Flutter SDK, Dio, or Firebase imports. Pure Dart only.
 4. **Repositories define contracts.** All data access flows through abstract repository interfaces in `domain/repositories/`. No concrete implementations in the domain layer.
 5. **Infrastructure is replaceable.** Swapping a repository implementation (e.g., Dio → GraphQL) must never require touching domain or application code.
-6. **User isolation is mandatory.** Every data access operation passes `userId` (from JWT). Every local storage key is scoped by `userId`. No exceptions.
-7. **State is sealed.** Every BLoC has `@freezed` sealed states: `initial`, `loading`, `loaded(data)`, `error(message)`. No raw strings, no mutable state.
-8. **CQRS mindset.** BLoC events = commands or queries. Use cases in `domain/use_cases/` are single-responsibility — one per BLoC event type.
-9. **Auth is infrastructure.** Token storage, token refresh, and Authorization header injection are infrastructure concerns (`core/network/`, `core/auth/`). The domain and application layers never touch tokens.
-10. **Dependencies point inward.** `domain/` → nothing. `application/` → `domain/`. `infrastructure/` → `domain/` + external packages. `presentation/` → `application/` + `domain/` entities.
-11. **Explicit over implicit.** No global state, no ambient context. `userId` and dependencies are passed explicitly through constructors and `get_it`.
-12. **Errors are typed Failures.** Domain and application layers return `Either<Failure, T>`. Infrastructure maps `DioException` → typed `Failure`. `DioException` never crosses the infrastructure boundary.
+6. **User isolation is mandatory.** Every data access operation passes `userId` (from JWT). No exceptions.
+7. **State is sealed.** Every controller has `@freezed` sealed states: `initial`, `loading`, `loaded(data)`, `error(AppError)`. No raw strings, no mutable state.
+8. **CQRS mindset.** Use cases in `domain/usecases/` are single-responsibility — one per user action.
+9. **Auth is infrastructure.** Token injection and refresh are infrastructure concerns (`core/network/`, `core/auth/`). The domain layer never touches tokens.
+10. **Dependencies point inward.** `domain/` → nothing. `data/` → `domain/` + external packages. `presentation/` → `domain/` + Riverpod controllers.
+11. **Explicit over implicit.** No global state, no ambient context. Dependencies registered in `app/providers/app_providers.dart` via Riverpod ProviderScope.
+12. **Errors are typed.** Infrastructure maps `DioException` → `AppError` (sealed class). `AppError` is propagated through Riverpod state. `DioException` never crosses the data layer boundary.
 13. **Review before merge.** Multi-agent review (spec, architecture, security) catches issues before code reaches production.
 14. **Automate enforcement.** The hook blocks writes to `lib/features/` if no reviewed spec exists. `flutter analyze` catches boundary violations.
 15. **Name things precisely.** Specs use kebab-case (`user-profile`). Repositories describe capabilities (`UserRepository`), not implementations (`DioUserRepository`).
@@ -48,50 +48,58 @@ No stage may be skipped. Implementation without a reviewed spec is blocked by th
 These are HARD blockers. Code violating any of these must not proceed.
 
 1. **No implementation without a spec.** The `enforce-spec-first.js` hook blocks writes to `lib/features/` if no reviewed spec exists.
-2. **No Flutter/Dio/Hive imports in domain.** Any external package import in `lib/features/<f>/domain/` is a boundary violation.
-3. **No data access without userId.** Every repository method must accept `userId` as a parameter. No query or cache operation executes without user scoping.
-4. **No tokens in SharedPreferences.** Access and refresh tokens must be stored in `FlutterSecureStorage` only. Never SharedPreferences. Never in-memory across sessions.
-5. **No secrets in code.** API keys, tokens, and credentials must come from environment variables or build-time constants. Never hardcoded.
-6. **No business logic in presentation.** Widgets fire BLoC events and render BLoC states. No `if` statements on business rules in widget `build()` methods.
-7. **No unguarded routes.** Every route that displays user-specific data must have an auth guard in GoRouter. Role-restricted routes must have a role guard.
-8. **No unvalidated input.** All external input is validated at the infrastructure boundary before it reaches the domain layer.
+2. **No Flutter/Dio/Firebase imports in domain.** Any external package import in `lib/features/<f>/domain/` is a boundary violation.
+3. **No data access without userId.** Every repository method that returns user data must be scoped to `userId`. No exceptions.
+4. **No tokens stored manually.** Firebase manages tokens internally — never extract and store them in SharedPreferences, Hive, or any manual store.
+5. **No secrets in code.** API keys and credentials must come from `--dart-define` build-time constants or `AppConfig`. Never hardcoded.
+6. **No business logic in presentation.** Widgets consume Riverpod state and fire controller methods. No `if` statements on business rules in widget `build()` methods.
+7. **No unguarded routes.** Every route that displays user-specific data must have an auth guard in GoRouter. The guard must respect the `initializing` state.
+8. **No unvalidated input.** All external input is validated at the data layer boundary before it reaches the domain layer.
 9. **No cross-user data access.** Tests must include user isolation verification. A query that returns another user's data is a P0 incident.
 
 ## Architecture Quick Reference
 
 ```
 lib/
-├── core/                         # Shared utilities — depends on everything
-│   ├── di/                       # get_it service locator, injection.dart
-│   ├── network/                  # Dio client, auth interceptor, error handler
-│   ├── auth/                     # Token storage (FlutterSecureStorage), refresh logic
-│   └── errors/                   # Failure types, exception hierarchy
+├── core/                         # Shared infrastructure — imported by features
+│   ├── network/                  # Dio client, auth interceptor, trace interceptor
+│   ├── auth/                     # AuthService, AppAuthState enum
+│   ├── errors/                   # sealed class AppError, FieldError
+│   ├── config/                   # AppConfig (dart-define constants)
+│   └── utils/                    # Extensions, formatters, permission_utils
+├── ui/                           # Reusable UI components
+│   ├── primitives/               # AppButton, AppInput, AppCard
+│   ├── components/               # EmptyState, ErrorView, LoadingOverlay
+│   └── layouts/                  # ScaffoldWithNav, AuthLayout
+├── theme/                        # Token system: core → semantic → ThemeData extensions
+├── app/
+│   ├── router/                   # GoRouter — all routes + auth guard
+│   ├── providers/                # app_providers.dart — all Riverpod providers registered
+│   └── bootstrap/                # app_bootstrap.dart — Firebase init + runApp
 └── features/
     └── <feature>/
         ├── domain/               # ZERO external dependencies. Pure Dart.
         │   ├── entities/         # Immutable @freezed data classes
         │   ├── repositories/     # Abstract interfaces (no implementation)
-        │   └── use_cases/        # Single-responsibility business operations
-        ├── application/          # State management. Depends on domain only.
-        │   └── blocs/            # BLoC classes, events, sealed @freezed states
-        ├── infrastructure/       # Concrete implementations. Depends on domain + packages.
-        │   ├── repositories/     # Implements domain repositories via Dio
+        │   └── usecases/         # Single-responsibility — one per user action
+        ├── data/                 # Concrete implementations. Depends on domain + packages.
+        │   ├── datasources/      # HTTP calls via ApiClient
         │   ├── models/           # JSON models (freezed + json_serializable)
-        │   └── data_sources/     # API data sources, Hive local cache
-        └── presentation/         # Widgets and screens. Depends on application layer.
-            ├── screens/          # Full-page widgets (BlocBuilder/BlocListener)
-            ├── widgets/          # Reusable components (skeleton, error, empty state)
-            └── router/           # GoRouter route definitions for this feature
+        │   └── repositories/     # Implements domain repository interfaces
+        └── presentation/         # Widgets and screens. Consumes Riverpod providers.
+            ├── controllers/      # StateNotifier / AsyncNotifier
+            ├── screens/          # Full-page widgets
+            └── widgets/          # Feature-specific components
 ```
 
 ### Dependency Rules (STRICT)
 
 ```
-domain/          → nothing (pure Dart, no Flutter/Dio/Hive/Firebase)
-application/     → domain/ only
-infrastructure/  → domain/ + external packages (Dio, Hive, etc.)
-presentation/    → application/ + domain/ (entities for display)
-core/            → everything (composition root)
+domain/          → nothing (pure Dart, no Flutter/Dio/Firebase)
+data/            → domain/ + external packages (Dio, Firebase, etc.)
+presentation/    → domain/ + Riverpod providers (controllers)
+core/            → external packages only (never imports features)
+app/             → everything (composition root)
 ```
 
 ## Available Commands
@@ -113,10 +121,10 @@ core/            → everything (composition root)
 | Agent | Expertise | Can Help With |
 |-------|-----------|---------------|
 | `domain-analyst` | Requirements & specifications | Spec review, edge cases, acceptance criteria, scope |
-| `sw-architect` | Flutter Clean Architecture | Layer boundaries, BLoC contracts, repository interfaces, dependency direction |
-| `security-engineer` | Security & threat modeling | Token storage, auth interceptor, user isolation, input validation |
-| `qa-engineer` | Testing & quality | FakeRepository pattern, BLoC tests, widget tests, user isolation tests |
-| `flutter-engineer` | Flutter + Dart implementation | Feature implementation, BLoC, Dio, auth flows, debugging |
+| `sw-architect` | Flutter Clean Architecture | Layer boundaries, Riverpod patterns, repository interfaces, dependency direction |
+| `security-engineer` | Security & threat modeling | Firebase auth, Dio interceptors, user isolation, input validation |
+| `qa-engineer` | Testing & quality | FakeRepository pattern, controller tests, widget tests, user isolation tests |
+| `flutter-engineer` | Flutter + Dart implementation | Feature implementation, Riverpod, Dio, auth flows, debugging |
 
 > `/spec` and `/build` orchestrate multi-agent reviews automatically.
 > All agents can also be invoked independently.
@@ -125,30 +133,31 @@ core/            → everything (composition root)
 
 All reference files are in `references/`:
 
-- `flutter_defaults.md` — Flutter Technical Constitution: every pre-decided default (auth, storage, BLoC patterns, navigation, error handling, testing). Applied automatically by commands.
-- `flutter_spec_template.md` — Flutter spec format (screens, BLoC contracts, offline behavior, permissions, auth context, navigation flows).
+- `flutter_defaults.md` — Flutter Technical Constitution: every pre-decided default (Riverpod patterns, auth, ApiClient, AppError, navigation, offline strategy, permissions, testing). Applied automatically by commands.
+- `flutter_spec_template.md` — Flutter spec format (screens, Riverpod contracts, offline behavior, permissions, auth context, navigation flows).
 
 ## Stack
 
 - **Mobile**: Flutter / Dart
 - **Auth**: Firebase Authentication (JWT with custom claims)
 - **Backend**: NestJS on Cloud Run (API calls via Dio — backend enforces RLS)
-- **Architecture**: Clean Architecture + BLoC + Event-Driven UI
-- **User isolation**: `userId` from JWT claim scopes all data access; local cache keyed by `userId`
+- **Architecture**: Clean Architecture + Riverpod
+- **User isolation**: `userId` from JWT scopes all data access; backend enforces RLS
 
 ## Key Packages
 
 | Package | Purpose |
 |---------|---------|
-| `freezed` + `freezed_annotation` | Immutable entities and sealed BLoC states |
-| `json_serializable` | JSON serialization for API models |
+| `flutter_riverpod` + `riverpod_annotation` | State management (StateNotifier, AsyncNotifier) |
+| `freezed` + `freezed_annotation` | Immutable entities and sealed state classes |
+| `json_serializable` + `build_runner` | JSON serialization for API models |
 | `dio` | HTTP client |
-| `flutter_secure_storage` | JWT token storage (Keychain / Keystore) |
-| `go_router` | Navigation with auth and role guards |
-| `flutter_bloc` | State management (BLoC / Cubit) |
-| `get_it` | Dependency injection service locator |
-| `dartz` | `Either<Failure, T>` for typed error handling |
-| `bloc_test` | BLoC unit testing |
+| `go_router` | Navigation with auth guard (respects `initializing` state) |
+| `firebase_core` + `firebase_auth` | Firebase initialization + client-side auth |
+| `firebase_messaging` | Push notifications |
+| `connectivity_plus` | Offline detection |
+| `permission_handler` | Runtime permissions (just-in-time) |
+| `cached_network_image` | Network image caching |
 | `shimmer` | Skeleton loading screens |
-| `hive` | Local structured cache (user-scoped) |
-| `firebase_crashlytics` | Error reporting |
+| `mocktail` | Controller unit tests (mock use cases) |
+| `integration_test` + `patrol` | E2E tests for critical flows |

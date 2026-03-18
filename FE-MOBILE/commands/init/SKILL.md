@@ -68,7 +68,7 @@ Then continue with these questions, in order, each waiting for a reply:
 **9. Offline support** — last question:
 > "The default for this kit is online-first — the app shows an error state when there's no connection, but doesn't cache data for offline use. Does that work for this project, or do you need offline support for specific features?"
 
-Do not ask any other questions. Do not ask about architecture, BLoC vs Cubit, Riverpod vs BLoC, navigation structure, or anything covered by `references/flutter_defaults.md`.
+Do not ask any other questions. Do not ask about architecture, Riverpod vs BLoC, StateNotifier vs AsyncNotifier, navigation structure, or anything covered by `references/flutter_defaults.md`.
 
 ---
 
@@ -133,8 +133,8 @@ Once confirmed, get the current date with `date` and write `specs/project.md`:
 <if offline support was requested, note it here explicitly>
 
 ## Feature Map (se actualiza con cada /build completado)
-| Feature | Archivos clave | Providers/BLoCs principales | Endpoints que consume |
-|---------|---------------|------------------------------|----------------------|
+| Feature | Archivos clave | Controllers/Providers | Endpoints que consume |
+|---------|---------------|----------------------|----------------------|
 ```
 
 ---

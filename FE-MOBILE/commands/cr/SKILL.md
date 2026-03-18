@@ -99,7 +99,7 @@ All other decisions are made automatically.
    - Give a clear recommendation with reasoning
    - **STOP** → wait for human to confirm approach
 4. Generate layered implementation blueprint
-5. Generate test skeletons (FakeRepository + BLoC tests) in `lib/features/<feature>/`
+5. Generate tests (FakeRepository for use cases + controller tests) in `test/features/<feature>/`
 6. Re-assess risk at implementation level
 7. **STOP** only if a new HIGH risk is found → present, ask how to proceed
 8. Write `specs/cr/plans/<cr-id>.plan.md`
@@ -129,7 +129,7 @@ All other decisions are made automatically.
 **For `feature`, `change`, `refactor`, `security` — layer by layer:**
 1. Read the plan and test skeletons
 2. For each layer — TDD: run tests (RED) → implement → run tests (GREEN)
-3. Layer order: domain → application (BLoC) → infrastructure → presentation
+3. Layer order: domain → data (repositories) → presentation (controllers + screens)
 4. Run: `flutter test lib/features/<feature>/<layer>/` per layer
 5. If a layer fails: diagnose, fix, re-run — do not proceed with failing tests
 6. Run multi-agent code review on completion

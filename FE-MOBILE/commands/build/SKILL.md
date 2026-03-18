@@ -72,18 +72,18 @@ If CR type is `bug`, skip to this phase.
 **Step 1 — Locate the file (silent)**
 
 1. Read `specs/project.md` — find the Feature Map entry for the area described in the CR
-2. Use the feature map to identify the exact files — BLoC, use case, or repository
+2. Use the feature map to identify the exact files — controller, use case, or repository
 3. Read only those files
 
 **Step 2 — Reproduce the bug (silent)**
 
 4. Read the CR item description
 5. Trace the Dart code path that produces the bug
-6. Identify the root cause — specific BLoC event, use case, or repository method
+6. Identify the root cause — specific controller method, use case, or repository
 
 **Step 3 — Write the regression test FIRST (TDD)**
 
-7. Write a targeted `blocTest` or widget test that:
+7. Write a targeted controller test or widget test that:
    - Reproduces the exact failure
    - Uses GIVEN/WHEN/THEN naming in the test description
    - Fails (red) before the fix
@@ -173,17 +173,18 @@ flutter test test/features/<feature>/ -name "domain" --reporter expanded
 
 If tests fail: diagnose and fix before proceeding to the next layer. Do not move forward with a failing layer.
 
-### Layer 2: Application/BLoC (`lib/features/<feature>/application/`)
+### Layer 2: Application (`lib/features/<feature>/domain/usecases/` + `presentation/controllers/`)
 
 **Step 1 — Run tests first (expect RED):**
 ```bash
-flutter test test/features/<feature>/application/ --reporter expanded
+flutter test test/features/<feature>/domain/ --reporter expanded
+flutter test test/features/<feature>/presentation/controllers/ --reporter expanded
 ```
 
 **Step 2 — Implement to make them green:**
-- BLoC classes, events, sealed @freezed states
-- Use case orchestration
-- Single-responsibility use cases per BLoC event type
+- Use cases (single-responsibility — one per user action)
+- StateNotifier / AsyncNotifier controllers
+- Sealed @freezed state classes with `AppError` in error variant
 
 **Step 3 — Run tests again (expect GREEN):**
 ```bash
@@ -200,9 +201,9 @@ flutter test test/features/<feature>/infrastructure/ --reporter expanded
 ```
 
 **Step 2 — Implement to make them green:**
-- Repository implementations
-- API gateways (Dio)
-- Local cache adapters (Hive)
+- Repository implementations (`data/repositories/`)
+- Remote datasources via ApiClient (Dio)
+- JSON models with freezed + json_serializable
 
 **Step 3 — Run tests again (expect GREEN):**
 ```bash
@@ -214,9 +215,9 @@ Fix any failures before proceeding.
 ### Layer 4: Presentation (`lib/features/<feature>/presentation/`)
 
 Implement presentation layer:
-- Screens (BlocBuilder/BlocListener)
+- Screens (ConsumerWidget / Consumer — consume Riverpod providers)
 - Reusable widgets (skeleton, error, empty state)
-- GoRouter route definitions for this feature
+- Register new routes in `app/router/app_router.dart`
 
 Run all tests:
 ```bash
@@ -225,9 +226,9 @@ flutter test test/features/<feature>/ --reporter expanded
 
 Fix any failures before proceeding.
 
-### Layer 5: DI / Config (`lib/core/di/`)
+### Layer 5: Providers (`lib/app/providers/app_providers.dart`)
 
-Wire get_it registrations if needed. Run the full test suite:
+Register new Riverpod providers. Run the full test suite:
 ```bash
 flutter test --reporter expanded
 ```
@@ -264,22 +265,22 @@ Once all layers are implemented and tests pass, run a parallel code review.
 Spawn three review agents simultaneously:
 
 **sw-architect agent:**
-- Boundary violations — does any domain file import from adapters or application?
-- Dependency direction — does application import only from domain?
-- Port compliance — are all external interactions going through ports?
-- Pattern consistency — does this match established codebase patterns?
+- Boundary violations — does domain/ import any external packages (Flutter, Dio, Firebase)?
+- Dependency direction — does data/ import from domain/ only?
+- Controllers only use use cases — not datasources or repositories directly?
+- AppAuthState.initializing respected in GoRouter guard?
 
 **security-engineer agent:**
-- Tenant isolation — is every data access scoped by tenant_uid?
-- Auth — are all write endpoints protected?
-- Input validation — is all external input validated at the adapter boundary?
-- Injection risks — SQL injection, command injection, path traversal?
-- Secrets — are credentials hardcoded anywhere?
+- User isolation — is every data access scoped to the authenticated userId?
+- Auth — does GoRouter guard cover all routes that display user data?
+- No tokens stored manually — Firebase manages token lifecycle?
+- No secrets hardcoded or in dart-define that belong server-side?
+- AppError propagated correctly — no raw exceptions visible to user?
 
-**backend-engineer agent:**
-- Code quality — is the implementation clean, readable, maintainable?
-- Error handling — are domain exceptions used correctly, no HTTP exceptions in domain?
-- Test coverage — do the tests cover the ACs, edge cases, and tenant isolation?
+**flutter-engineer agent:**
+- Code quality — clean, readable, idiomatic Dart?
+- Error handling — AppError used, no silent catch blocks, no DioException crossing data layer?
+- Test coverage — FakeRepository for use case tests, mocktail for controllers, widget tests cover loading/data/error?
 - Proportionality — is the implementation appropriately scoped to the CR?
 
 Consolidate findings. Classify each:
@@ -301,7 +302,8 @@ Discard `SUGGESTION` findings — out of scope for this CR.
 
 Re-run tests after fixes:
 ```bash
-pytest tests/<cr-id>/ -v
+flutter test
+flutter analyze
 ```
 
 ---

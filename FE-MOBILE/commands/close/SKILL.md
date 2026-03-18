@@ -40,7 +40,8 @@ Verify the build outcome against the CR intent:
 2. Read the approved spec — load all acceptance criteria
 3. Run the full test suite:
    ```bash
-   pytest tests/<cr-id>/ -v
+   flutter test
+   flutter analyze
    ```
 4. For each AC in the spec, confirm:
    - Is there a test covering it?
@@ -156,11 +157,11 @@ If CR type is `feature`, update `specs/project.md`:
 2. Find the `## Feature Map` section
 3. For the feature that was built, update or add a row:
 
-| Feature | Archivos clave | Providers/BLoCs principales | Endpoints que consume |
-|---------|---------------|------------------------------|----------------------|
-| `<feature_name>` | `lib/features/<name>/domain/entities/<Entity>.dart`, `lib/features/<name>/infrastructure/repositories/<Name>Repository.dart`, `lib/features/<name>/application/blocs/<name>_bloc.dart`, `lib/features/<name>/presentation/screens/<Name>Screen.dart` | `<NameBloc>`, `<NameEvent>`, `<NameState>` | `GET /v1/<name>`, `POST /v1/<name>` |
+| Feature | Archivos clave | Controllers/Providers | Endpoints que consume |
+|---------|---------------|----------------------|----------------------|
+| `<feature_name>` | `lib/features/<name>/domain/entities/<Entity>.dart`, `lib/features/<name>/data/repositories/<Name>RepositoryImpl.dart`, `lib/features/<name>/presentation/controllers/<name>_controller.dart`, `lib/features/<name>/presentation/screens/<Name>Screen.dart` | `<name>ControllerProvider`, `<Name>State` | `GET /v1/<name>`, `POST /v1/<name>` |
 
-Fill in actual file paths and BLoC names from the implementation just completed.
+Fill in actual file paths and provider names from the implementation just completed.
 
 ---
 

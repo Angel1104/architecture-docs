@@ -100,7 +100,7 @@ Wait for the answer. Then continue with targeted questions.
 
 **Do NOT ask about:**
 - Which layer to fix it in (you decide)
-- Which BLoC or Cubit pattern to use (you decide)
+- Which Riverpod pattern to use — StateNotifier vs AsyncNotifier (you decide)
 - Whether to write tests (always yes)
 - Which widget to use (you decide)
 - Anything in the technical references (you apply them)

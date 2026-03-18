@@ -530,3 +530,97 @@ src/theme/
 - Firebase Admin SDK is server-side only — never in `'use client'` files.
 - All env vars documented in `.env.example` with empty values and a comment.
 - Missing required env vars cause a startup error — validate with `src/lib/env.ts` using Zod.
+
+---
+
+## 11. Server Actions
+
+File pattern: `src/features/<name>/application/actions/<name>.actions.ts`
+
+### When to use Server Actions vs ApiClient
+
+| Situation | Use |
+|---|---|
+| Mutation that only needs server-side Firebase Admin | Server Action |
+| Reading or writing data from backend API | `apiClient` (fetch to NestJS) |
+| Form submission that needs auth via Firebase Admin | Server Action |
+| Any client-side data fetching | TanStack Query + `apiClient` |
+| File upload to R2 (get presigned URL then upload) | `apiClient` |
+
+**Default: use `apiClient` to call NestJS.** Server Actions are for operations that need Firebase Admin SDK directly (e.g., custom claims, token revocation) or for progressive enhancement of HTML forms.
+
+### Server Action pattern
+
+```typescript
+// src/features/auth/application/actions/set-custom-claims.actions.ts
+'use server'
+
+import { adminAuth } from '@/core/auth/firebase-admin'
+import { revalidatePath } from 'next/cache'
+
+export async function setCustomClaims(userId: string, role: string) {
+  await adminAuth.setCustomUserClaims(userId, { role })
+  revalidatePath('/dashboard')
+}
+```
+
+### Rules
+
+- Always add `'use server'` directive at the top of the file — not just the function
+- Server Actions run on the server — they have access to server-side env vars and Firebase Admin
+- Never import Firebase client SDK in a Server Action file
+- Use `revalidatePath` or `revalidateTag` after mutations to bust Next.js cache
+- Server Actions that need auth must verify the token server-side — never trust client-passed identity
+- For form validation: validate with Zod in the action before processing
+
+---
+
+## 12. Project Initialization Checklist
+
+### Repository setup
+- [ ] Next.js project created with `npx create-next-app@latest --typescript --tailwind --app`
+- [ ] `tsconfig.json` has `"strict": true`
+- [ ] `.env.local` for development, `.env.example` with all variables and comments
+- [ ] `.gitignore` includes `.env.local`, `.next/`, `node_modules/`
+- [ ] ESLint + Prettier configured
+
+### Folder structure
+- [ ] `src/core/api/client.ts` with ApiClient (Bearer, X-Trace-ID, 401 retry)
+- [ ] `src/core/auth/firebase.ts` with Firebase initialization (no duplicate `initializeApp`)
+- [ ] `src/core/auth/useAuth.ts` with `'use client'` hook
+- [ ] `src/core/errors/ApiError.ts` with `ApiError` type and `isApiError` guard
+- [ ] `src/theme/` with token structure (core → semantic → CSS vars → tailwind)
+- [ ] `src/components/ui/` for atomic components (Button, Input, Modal)
+- [ ] `src/components/shared/` for product-level reusables (PageHeader, EmptyState)
+
+### Auth + routing
+- [ ] Firebase client SDK initialized in `src/core/auth/firebase.ts`
+- [ ] `useAuth` hook wraps `onAuthStateChanged` with loading state
+- [ ] Auth guard middleware or layout checks auth before rendering protected routes
+- [ ] `'use client'` directive on all files that use `useAuth` or Firebase client SDK
+- [ ] Firebase Admin SDK (`firebase-admin`) installed for Server Actions — server-side only
+
+### ApiClient
+- [ ] `apiClient` exported from `src/core/api/client.ts`
+- [ ] No `fetch` calls outside `client.ts`
+- [ ] 401 retry: `getIdToken(forceRefresh: true)` → retry once → on second 401: `signOut()` + redirect
+- [ ] `X-Trace-ID` attached to every request
+
+### State and data
+- [ ] `QueryClientProvider` wrapping app in `app/layout.tsx` (TanStack Query)
+- [ ] `QueryClient` with appropriate `staleTime` configured
+- [ ] Zustand stores only for global client state — no server data in Zustand
+
+### Testing baseline
+- [ ] `vitest` configured with `vitest.config.ts`
+- [ ] `msw` server set up in `src/mocks/server.ts`
+- [ ] `vitest.setup.ts` starts/resets/closes msw server
+- [ ] At least one feature with full test structure (`domain/`, `application/`, `infrastructure/`, `presentation/`)
+- [ ] At least one user isolation test
+
+### Validation
+- [ ] `npx tsc --noEmit` passes
+- [ ] `npx vitest run` passes
+- [ ] `npx next build` passes
+- [ ] No `NEXT_PUBLIC_` variables contain secrets
+- [ ] `'use client'` only where necessary (no unnecessary client boundaries)
