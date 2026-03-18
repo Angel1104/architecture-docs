@@ -16,7 +16,8 @@
 6. [Permisos e IAM](#6-permisos-e-iam)
 7. [CI/CD con GitHub Actions](#7-cicd-con-github-actions)
 8. [Rollback](#8-rollback)
-9. [Checklist de infraestructura nueva](#9-checklist-de-infraestructura-nueva)
+9. [CI/CD Mobile — Android e iOS](#9-cicd-mobile--android-e-ios)
+10. [Checklist de infraestructura nueva](#10-checklist-de-infraestructura-nueva)
 
 ---
 
@@ -662,7 +663,336 @@ Vercel mantiene historial de deployments. El rollback se hace desde el dashboard
 
 ---
 
-## 9. Checklist de infraestructura nueva
+## 9. CI/CD Mobile — Android e iOS
+
+### Herramientas
+
+| Herramienta | Propósito | Costo |
+|---|---|---|
+| **Fastlane** | Build, signing, y distribución automática | Gratis, open source |
+| **fastlane match** | Gestión de certificados y provisioning profiles iOS en un repositorio privado | Gratis |
+| **GitHub Actions** | Runner del pipeline | Gratis para repos privados (límite de minutos mensuales) |
+| **GitHub Actions macOS runner** | Requerido para builds de iOS | Consume minutos más rápido (10x vs Linux) |
+
+> **Runners macOS:** GitHub incluye minutos gratuitos mensuales. iOS consume más minutos por ser macOS. En proyectos activos con muchos pushes, monitorear el consumo.
+
+### Estructura de workflows
+
+```
+.github/
+└── workflows/
+    ├── ci-mobile.yml          ← Tests y análisis Flutter en cada PR
+    ├── deploy-android.yml     ← Build AAB + Play Store internal track
+    └── deploy-ios.yml         ← Build IPA + TestFlight
+```
+
+### Estructura de Fastlane en el repositorio
+
+```
+mobile/
+└── fastlane/
+    ├── Appfile              ← app_identifier, apple_id, package_name
+    ├── Fastfile             ← lanes definidas (android, ios)
+    ├── Matchfile            ← configuración de match para iOS
+    └── Pluginfile           ← plugins si se necesitan
+```
+
+---
+
+### `ci-mobile.yml` — Tests en cada PR
+
+```yaml
+name: CI Mobile
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+
+jobs:
+  test-flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+        working-directory: ./mobile
+
+      - name: Analyze
+        run: flutter analyze
+        working-directory: ./mobile
+
+      - name: Run tests
+        run: flutter test --coverage
+        working-directory: ./mobile
+```
+
+---
+
+### `deploy-android.yml` — Build AAB + Play Store internal track
+
+**Prerrequisitos:**
+- App creada en Google Play Console con al menos un build manual subido previamente.
+- Service account de Google Play con permiso "Release manager" en la app.
+- Keystore de firma generado y almacenado en GitHub Secrets.
+
+```yaml
+name: Deploy Android
+
+on:
+  push:
+    tags:
+      - 'v*'   # mismo tag que dispara el deploy de backend/web
+  workflow_dispatch:   # permite trigger manual
+
+jobs:
+  deploy-android:
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+        working-directory: ./mobile
+
+      - name: Setup Ruby for Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: ./mobile
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > mobile/android/app/keystore.jks
+
+      - name: Build AAB
+        run: |
+          flutter build appbundle --release \
+            --dart-define=APP_ENV=production \
+            --dart-define=API_URL=${{ secrets.PROD_API_URL }} \
+            --dart-define=FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID_PROD }}
+        working-directory: ./mobile
+        env:
+          KEYSTORE_PATH: android/app/keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Upload to Play Store (internal track)
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ secrets.ANDROID_PACKAGE_NAME }}
+          releaseFiles: mobile/build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
+          changesNotSentForReview: false
+```
+
+**Secrets requeridos (environment `prod`):**
+
+| Secret | Descripción |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | Keystore `.jks` codificado en base64 (`base64 -i keystore.jks`) |
+| `ANDROID_KEYSTORE_PASSWORD` | Password del keystore |
+| `ANDROID_KEY_ALIAS` | Alias de la key dentro del keystore |
+| `ANDROID_KEY_PASSWORD` | Password de la key |
+| `ANDROID_PACKAGE_NAME` | Package name de la app (ej: `com.company.app`) |
+| `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | JSON del service account de Google Play Console |
+
+**Flujo después del workflow:**
+```
+GitHub Actions → Play Store internal track → Tú promueves a alpha/beta/prod desde Play Console
+```
+
+---
+
+### `deploy-ios.yml` — Build IPA + TestFlight
+
+**Prerrequisitos:**
+- App creada en App Store Connect.
+- Apple Developer account activa ($99/año — costo inevitable, no es de herramientas).
+- Repositorio privado para `fastlane match` (puede ser otro repo GitHub privado).
+
+```yaml
+name: Deploy iOS
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  deploy-ios:
+    runs-on: macos-latest   # ← iOS requiere macOS obligatoriamente
+    environment: prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+        working-directory: ./mobile
+
+      - name: Setup Ruby for Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: ./mobile
+
+      - name: Install Fastlane
+        run: bundle install
+        working-directory: ./mobile
+
+      - name: Run Fastlane deploy iOS
+        run: bundle exec fastlane ios deploy
+        working-directory: ./mobile
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          FLUTTER_DART_DEFINES: "APP_ENV=production,API_URL=${{ secrets.PROD_API_URL }},FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID_PROD }}"
+```
+
+**`mobile/fastlane/Fastfile` — lane de iOS:**
+
+```ruby
+default_platform(:ios)
+
+platform :ios do
+  desc "Build y subir a TestFlight"
+  lane :deploy do
+    # Sincronizar certificados y provisioning profiles desde el repo de match
+    match(
+      type: "appstore",
+      readonly: true,
+      app_identifier: ENV["IOS_BUNDLE_ID"]
+    )
+
+    # Incrementar build number automáticamente
+    increment_build_number(
+      build_number: ENV["GITHUB_RUN_NUMBER"],
+      xcodeproj: "Runner.xcodeproj"
+    )
+
+    # Build Flutter (genera el .xcarchive)
+    sh("flutter build ipa --release " \
+       "--dart-define=APP_ENV=production " \
+       "--dart-define=API_URL=#{ENV['PROD_API_URL']} " \
+       "--dart-define=FIREBASE_PROJECT_ID=#{ENV['FIREBASE_PROJECT_ID_PROD']}")
+
+    # Subir a TestFlight
+    upload_to_testflight(
+      api_key_path: nil,
+      api_key: {
+        key_id: ENV["APP_STORE_CONNECT_API_KEY_ID"],
+        issuer_id: ENV["APP_STORE_CONNECT_API_ISSUER_ID"],
+        key_content: ENV["APP_STORE_CONNECT_API_KEY_CONTENT"],
+        is_key_content_base64: true
+      },
+      ipa: "../build/ios/ipa/*.ipa",
+      skip_waiting_for_build_processing: true   # no espera — el agente no se bloquea
+    )
+  end
+end
+```
+
+**`mobile/fastlane/Matchfile` — configuración de certificados:**
+
+```ruby
+git_url("https://github.com/[org]/[app]-certificates")   # repo privado solo para certs
+storage_mode("git")
+type("appstore")
+app_identifier(["com.company.app"])
+username("")   # vacío — se usa App Store Connect API key
+```
+
+**Secrets requeridos (environment `prod`):**
+
+| Secret | Descripción |
+|---|---|
+| `MATCH_PASSWORD` | Password para encriptar/desencriptar certs en el repo de match |
+| `MATCH_GIT_BASIC_AUTHORIZATION` | Token base64 para acceder al repo privado de certs (`echo -n "user:token" \| base64`) |
+| `APP_STORE_CONNECT_API_KEY_ID` | Key ID de la API key de App Store Connect |
+| `APP_STORE_CONNECT_API_ISSUER_ID` | Issuer ID de App Store Connect |
+| `APP_STORE_CONNECT_API_KEY_CONTENT` | Contenido del archivo `.p8` codificado en base64 |
+| `IOS_BUNDLE_ID` | Bundle identifier de la app (ej: `com.company.app`) |
+
+**Flujo después del workflow:**
+```
+GitHub Actions → TestFlight (build disponible) → Tú invitas testers o promueves a App Store desde App Store Connect
+```
+
+---
+
+### Repositorio privado para `fastlane match`
+
+`fastlane match` almacena los certificados de iOS y provisioning profiles **encriptados** en un repositorio Git privado. Esto evita que cada desarrollador tenga que gestionar certificados manualmente.
+
+```
+[app]-certificates (repo privado)
+├── certs/
+│   └── distribution/     ← certificados .cer y .p12 (encriptados)
+└── profiles/
+    └── appstore/          ← provisioning profiles .mobileprovision (encriptados)
+```
+
+**Crear el repo de match:**
+```bash
+cd mobile
+bundle exec fastlane match init
+# → ingresa la URL del repo privado de certificados
+# → ingresa el MATCH_PASSWORD (guárdalo en Secret Manager y en GitHub Secrets)
+
+bundle exec fastlane match appstore
+# → genera certificados y profiles, los sube encriptados al repo
+```
+
+**Regla:** el repo de certificados nunca es el mismo repo que el código. Es un repo separado, privado, con acceso restringido.
+
+---
+
+### Versionado de la app mobile
+
+El build number se incrementa automáticamente usando `GITHUB_RUN_NUMBER` (número incremental de GitHub Actions). El version name (`1.0.0`) se controla en:
+- Android: `mobile/pubspec.yaml` → campo `version: 1.0.0+1` (la parte antes de `+` es el version name)
+- iOS: usa el mismo `pubspec.yaml` vía Flutter
+
+**Para hacer un release:**
+1. Actualizar `version` en `pubspec.yaml` (ej: `1.1.0+1`).
+2. Crear tag `v1.1.0` en Git.
+3. Los workflows de Android e iOS se disparan automáticamente.
+
+---
+
+## 10. Checklist de infraestructura nueva
 
 ### Dominio y DNS
 - [ ] Dominio comprado en Squarespace
@@ -707,6 +1037,28 @@ Vercel mantiene historial de deployments. El rollback se hace desde el dashboard
 - [ ] Workflow `deploy-prod.yml` requiere aprobación y despliega en tag `v*`
 - [ ] Workflow `rollback-prod.yml` funciona con `workflow_dispatch`
 
+### Mobile — Android
+- [ ] App creada en Google Play Console con primer build manual subido
+- [ ] Keystore de firma generado y guardado de forma segura (no en el repo)
+- [ ] Keystore codificado en base64 y almacenado en GitHub Secret `ANDROID_KEYSTORE_BASE64`
+- [ ] Service account de Google Play Console creado con permiso "Release manager"
+- [ ] JSON del service account almacenado en GitHub Secret `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`
+- [ ] Secrets de Android configurados en environment `prod` de GitHub
+- [ ] Workflow `deploy-android.yml` construye AAB correctamente
+- [ ] Build sube al internal track de Play Store sin errores
+
+### Mobile — iOS
+- [ ] App creada en App Store Connect
+- [ ] Apple Developer account activa ($99/año)
+- [ ] Repositorio privado de certificados creado (`[app]-certificates`)
+- [ ] `fastlane match init` ejecutado y repo configurado en `Matchfile`
+- [ ] `fastlane match appstore` ejecutado — certificados y profiles generados y subidos al repo
+- [ ] `MATCH_PASSWORD` guardado en Secret Manager y en GitHub Secret
+- [ ] App Store Connect API key creada (tipo "App Manager")
+- [ ] Secrets de iOS configurados en environment `prod` de GitHub
+- [ ] Workflow `deploy-ios.yml` construye IPA correctamente
+- [ ] Build aparece en TestFlight sin errores
+
 ### Validación end-to-end
 - [ ] `https://[app].com` carga correctamente con HTTPS
 - [ ] `https://api.[app].com/health` responde 200
@@ -716,8 +1068,11 @@ Vercel mantiene historial de deployments. El rollback se hace desde el dashboard
 - [ ] Deploy de staging se activa automáticamente en push a `main`
 - [ ] Deploy de prod requiere aprobación manual antes de ejecutarse
 - [ ] Rollback de prod funciona correctamente
+- [ ] Tag `v*` dispara deploy de Android e iOS simultáneamente
+- [ ] AAB aparece en Play Store internal track
+- [ ] IPA aparece en TestFlight
 
 ---
 
-*Versión: 1.0 — Marzo 2026*
+*Versión: 1.1 — Marzo 2026*
 *Complementa `ARCHITECTURE.md`. Lee ese documento primero para el contexto del sistema completo.*
