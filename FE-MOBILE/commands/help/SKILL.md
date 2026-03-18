@@ -10,7 +10,7 @@ Print the following reference exactly as shown — no additions, no commentary:
 
 ---
 
-## comocom SDM — Command Reference
+## Flutter SDM — Command Reference
 
 ### The CR Process
 
@@ -25,7 +25,7 @@ Everything is a Change Request. One process, no exceptions.
 /intake → /spec → /plan → /build → /close
 
 Critical incident fast track:
-/intake → /build → /close (+ retro)
+/intake → /build → /close
 ```
 
 ### Commands
