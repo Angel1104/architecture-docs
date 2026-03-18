@@ -26,7 +26,9 @@ You are responsible for formally closing a CR. You verify all acceptance criteri
    > "No CR item found. Run `/intake` first."
 3. Read the CR item — check status is `BUILT`. If not:
    - Anything earlier → "Build not complete. Run `/build CR-<cr-id>` first."
-4. Locate `specs/cr/<cr-id>.spec.md` and `specs/cr/plans/<cr-id>.plan.md` — both must exist.
+4. For `feature`, `security`, `refactor` CRs: locate both `specs/cr/<cr-id>.spec.md` and `specs/cr/plans/<cr-id>.plan.md` — both must exist.
+   For `bug` CRs: only the CR item is required — no spec or plan file needed.
+   For `change` CRs: only the spec file is required — no plan file needed.
 
 ---
 
@@ -129,6 +131,23 @@ Append to the end of the file:
 **Lessons Learned:** <only if flagged>
 **Follow-up CRs:** <only if any, otherwise omit>
 ```
+
+---
+
+## Phase 5b: Update specs/project.md Feature Map (feature CRs only)
+
+If CR type is `feature`, update `specs/project.md`:
+
+1. Read `specs/project.md`
+2. Find the `## Feature Map` section
+3. For the feature that was built, update or add a row:
+
+| Feature | Archivos clave | Hooks/Componentes principales | Endpoints que consume |
+|---------|---------------|-------------------------------|----------------------|
+| `<feature-name>` | `src/features/<name>/domain/entities/<Entity>.ts`, `src/features/<name>/infrastructure/repositories/<Name>Repository.ts`, `src/features/<name>/application/hooks/use<Name>.ts`, `src/features/<name>/presentation/pages/<Name>Page.tsx` | `use<Name>`, `<Name>Page` | `GET /v1/<name>`, `POST /v1/<name>` |
+
+Fill in actual file paths and hook names from the implementation just completed.
+This keeps the project map current so future `/intake` bug CRs can locate files without scanning.
 
 ---
 

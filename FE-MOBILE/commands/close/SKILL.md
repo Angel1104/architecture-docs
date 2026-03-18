@@ -26,7 +26,9 @@ You are responsible for formally closing a CR. You verify all acceptance criteri
    > "No CR item found. Run `/intake` first."
 3. Read the CR item — check status is `BUILT`. If not:
    - Anything earlier → "Build not complete. Run `/build CR-<cr-id>` first."
-4. Locate `specs/cr/<cr-id>.spec.md` and `specs/cr/plans/<cr-id>.plan.md` — both must exist.
+4. For `feature`, `security`, `refactor` CRs: locate both `specs/cr/<cr-id>.spec.md` and `specs/cr/plans/<cr-id>.plan.md` — both must exist.
+   For `bug` CRs: only the CR item is required.
+   For `change` CRs: only the spec file is required.
 
 ---
 
@@ -143,6 +145,22 @@ Append to the end of the file:
 **Follow-up CRs:** <only if any, otherwise omit>
 - <Item — brief description>
 ```
+
+---
+
+## Phase 5b: Update specs/project.md Feature Map (feature CRs only)
+
+If CR type is `feature`, update `specs/project.md`:
+
+1. Read `specs/project.md`
+2. Find the `## Feature Map` section
+3. For the feature that was built, update or add a row:
+
+| Feature | Archivos clave | Providers/BLoCs principales | Endpoints que consume |
+|---------|---------------|------------------------------|----------------------|
+| `<feature_name>` | `lib/features/<name>/domain/entities/<Entity>.dart`, `lib/features/<name>/infrastructure/repositories/<Name>Repository.dart`, `lib/features/<name>/application/blocs/<name>_bloc.dart`, `lib/features/<name>/presentation/screens/<Name>Screen.dart` | `<NameBloc>`, `<NameEvent>`, `<NameState>` | `GET /v1/<name>`, `POST /v1/<name>` |
+
+Fill in actual file paths and BLoC names from the implementation just completed.
 
 ---
 

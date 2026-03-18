@@ -26,13 +26,20 @@ For Critical incidents, you lead the containment first, then the fix.
 1. Read `$ARGUMENTS` — extract the CR-ID
 2. Locate `specs/cr/<cr-id>.cr.md` — if missing, stop:
    > "No CR item found. Run `/intake` first."
-3. Read the CR item — check status is `PLANNED`. If not:
-   - Status is `OPEN` → "Run `/spec` then `/plan` first."
-   - Status is `SPECCED` → "Plan not done yet. Run `/plan CR-<cr-id>` first."
-4. Locate `specs/cr/plans/<cr-id>.plan.md` — verify it exists and option is confirmed.
+3. Read the CR item — check Type and Status:
 
-**Exception — Critical track:**
-If CR severity is `Critical`, gate check is relaxed. The CR item from `/intake` is sufficient. Proceed directly to Containment.
+   **Bug track** (Type = `bug`):
+   - Status must be `OPEN` — proceed directly to Bug Track phase
+   - No spec or plan required — bugs skip both stages
+
+   **Standard track** (Type = `feature`, `change`, `refactor`):
+   - Status must be `PLANNED`
+   - If status is `OPEN` → "Run `/spec` then `/plan` first."
+   - If status is `SPECCED` → "Plan not done yet. Run `/plan CR-<cr-id>` first."
+   - Locate `specs/cr/plans/<cr-id>.plan.md` — must exist
+
+   **Security / Incident track**:
+   - Gate check relaxed — CR item from `/intake` is sufficient
 
 ---
 
@@ -54,6 +61,74 @@ If severity is Critical, do this before any implementation:
 > These are reversible. Confirm when done so I can proceed with the fix.
 
 Wait for the developer to confirm containment. Then proceed to Phase 1.
+
+---
+
+## Phase 0b: Bug Track (Type = `bug` only)
+
+If CR type is `bug`, skip to this phase.
+
+**Step 1 — Locate the file (silent)**
+
+1. Read `specs/project.md` — find the Feature Map entry for the area described in the CR
+2. Use the feature map to identify the exact file(s) most likely to contain the bug
+3. Read only those files
+
+**Step 2 — Reproduce the bug (silent)**
+
+4. Read the CR item description carefully
+5. Trace the code path that produces the bug
+6. Identify the root cause — the specific hook, component, or repository method
+
+**Step 3 — Write the regression test FIRST (TDD)**
+
+7. Write a targeted test that:
+   - Reproduces the exact failure using msw handlers
+   - Uses GIVEN/WHEN/THEN naming
+   - Fails (red) before the fix
+
+```bash
+npx vitest run src/features/<feature>/__tests__/
+```
+Test must fail here.
+
+**Step 4 — Fix**
+
+8. Apply the minimal fix — change only what is needed to make the regression test pass
+9. Do not refactor surrounding code
+
+**Step 5 — Verify (green)**
+
+```bash
+npx vitest run src/features/<feature>/__tests__/
+```
+Then the full suite:
+```bash
+npx vitest run
+```
+
+**Step 6 — TypeScript check**
+
+```bash
+npx tsc --noEmit
+```
+
+**Step 7 — Update CR**
+
+Update `specs/cr/<cr-id>.cr.md`:
+```
+Status: OPEN → BUILT
+Changelog: | <today> | Bug fixed — regression test added and passing | |
+```
+
+Tell the developer:
+> **Bug fix complete for CR-<cr-id>.**
+>
+> Root cause: [one sentence]
+> Fix: [one sentence]
+> Test added: [test name]
+>
+> Next step: run `/close CR-<cr-id>` to formally close.
 
 ---
 

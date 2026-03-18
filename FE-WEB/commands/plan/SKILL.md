@@ -238,6 +238,21 @@ it('only returns data for the authenticated user — never another user\'s data'
 
 Always include an auth/user isolation test for any CR that touches authenticated routes or user data.
 
+### Test separation: unit vs integration
+
+**Unit tests** (always, run in CI):
+- Hook tests with `renderHook` + msw — no real API calls
+- Domain use case tests — pure TypeScript, no fetch
+
+**Component/integration tests** (heavier, may require more setup):
+- Full component renders with msw + React Testing Library
+- These can be tagged and run separately if needed:
+```bash
+npx vitest run --reporter=verbose src/features/<feature>/
+```
+
+Never mock ApiClient directly — always use msw handlers. This ensures tests are as close to real network behavior as possible without making actual HTTP calls.
+
 ---
 
 ## Phase 8: Handoff

@@ -238,6 +238,27 @@ describe('CreateNameUseCase — CR-<crId>', () => {
 })
 ```
 
+### Test separation: unit vs integration
+
+**Unit tests** (always, run in CI without external dependencies):
+- Use case tests → `FakeRepository` implementations
+- Domain entity tests → pure TypeScript, no DB
+
+**Integration tests** (explicitly optional — require real Postgres via Docker Compose):
+- Repository tests → real Prisma + real DB
+- These are tagged `@integration` and run separately:
+```bash
+npx jest --runInBand --testPathPattern="integration"
+```
+
+Do not mix unit and integration tests in the same file.
+If the project has no Docker Compose setup, generate only unit test skeletons and add a comment:
+```typescript
+// Integration test for <Name>Repository — requires Docker Compose + real Neon DB
+// Run with: npx jest --runInBand --testPathPattern="integration"
+// Skip in CI unless DB_TEST_URL is set
+```
+
 ---
 
 ## Phase 5: Risk Re-Assessment

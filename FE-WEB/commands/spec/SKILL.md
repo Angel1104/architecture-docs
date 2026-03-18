@@ -53,15 +53,19 @@ Load all relevant context before writing anything:
 
 Before drafting, decide the depth of each spec section based on the CR item:
 
-| CR characteristic | Spec depth |
-|---|---|
-| New feature, new domain concept | All sections fully populated |
-| New route/page on existing pattern | Problem statement, screens & routes, API deps, ACs, errors |
-| Security fix, auth gap | Problem statement, auth perspective, ACs, error scenarios |
-| Refactor, structural improvement | Problem statement, bounded context, ACs only |
-| Incident follow-up | Problem statement, root cause, ACs, errors |
+| CR type | Sections required | Notes |
+|---------|------------------|-------|
+| `feature` (Normal) | All 10 sections | Full spec |
+| `feature` (High) | All 10 sections, leaner content | Same sections, less detail where obvious |
+| `change` | §1 Problem Statement, §7 Acceptance Criteria, §8 Error Scenarios | Lean spec — 3 sections only |
+| `refactor` | §1 Problem Statement, §2 Bounded Context, §7 Acceptance Criteria | Lean spec — 3 sections only. ACs must prove no behavior change. |
+| `security` | §1 Problem Statement, §6 Auth Perspective, §7 ACs, §8 Error Scenarios | Security-focused sections |
+| `incident` follow-up | §1 Problem Statement + root cause, §7 ACs, §8 Error Scenarios | Root cause in §1 |
 
-A section that is not relevant to this CR should be marked `N/A — not applicable to this CR type` rather than left blank.
+**For `change` and `refactor` lean specs:**
+- Generate only the required sections — no N/A placeholders for skipped sections
+- The spec file is shorter by design
+- These CRs skip `/plan` entirely: lean spec → `/build` directly
 
 Apply all technical defaults from `nextjs_defaults.md` without asking. Mark them `(default)`.
 
@@ -169,4 +173,6 @@ Tell the developer:
 >
 > [Brief summary: what the spec covers, key decisions made, any warnings noted]
 >
-> Next step: run `/plan CR-<cr-id>` to generate the implementation plan and tests.
+> Next step:
+> - `feature` / `security` → run `/plan CR-<cr-id>` to generate the implementation plan and tests
+> - `change` / `refactor` → run `/build CR-<cr-id>` directly — lean spec skips the plan stage

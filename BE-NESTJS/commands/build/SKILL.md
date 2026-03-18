@@ -26,11 +26,20 @@ For Critical incidents, you lead the containment first, then the fix.
 1. Read `$ARGUMENTS` — extract the CR-ID
 2. Locate `specs/cr/<cr-id>.cr.md` — if missing, stop:
    > "No CR item found. Run `/intake` first."
-3. Read the CR item — check status is `PLANNED`. If not:
-   - Status is `OPEN` → "Run `/spec` then `/plan` first."
-   - Status is `SPECCED` → "Plan not done yet. Run `/plan CR-<cr-id>` first."
-4. Locate `specs/cr/plans/<cr-id>.plan.md` — verify it exists. If not:
-   > "No confirmed plan found. Complete `/plan CR-<cr-id>` before building."
+3. Read the CR item — check Type and Status:
+
+   **Bug track** (Type = `bug`):
+   - Status must be `OPEN` — proceed directly to Bug Track phase
+   - No plan required — bugs skip spec and plan
+
+   **Standard track** (Type = `feature`, `change`, `refactor`):
+   - Status must be `PLANNED`
+   - If status is `OPEN` → "Run `/spec` then `/plan` first."
+   - If status is `SPECCED` → "Plan not done yet. Run `/plan CR-<cr-id>` first."
+   - Locate `specs/cr/plans/<cr-id>.plan.md` — must exist
+
+   **Security / Incident track**:
+   - Gate check relaxed — CR item from `/intake` is sufficient
 
 **Exception — Critical track:**
 If CR severity is `Critical`, gate check is relaxed. The CR item from `/intake` is sufficient. Proceed directly to the Containment phase.
@@ -56,6 +65,76 @@ If severity is Critical, do this before any implementation:
 > These are reversible. Confirm when done so I can proceed with the fix.
 
 Wait for the developer to confirm containment is in place. Then proceed to Phase 1.
+
+---
+
+## Phase 0b: Bug Track (Type = `bug` only)
+
+If CR type is `bug`, skip to this phase. Do not run Phases 1–2.
+
+**Step 1 — Locate the file (silent)**
+
+1. Read `specs/project.md` — find the feature map entry for the area described in the CR
+2. Use the feature map to identify the exact file(s) most likely to contain the bug
+3. Read only those files — do not scan the whole codebase
+
+**Step 2 — Reproduce the bug (silent)**
+
+4. Read the CR item description carefully — understand the exact symptom
+5. Trace the code path that produces the bug
+6. Identify the root cause — one specific line or logic error
+
+**Step 3 — Write the regression test FIRST (TDD)**
+
+7. Write a targeted test that:
+   - Reproduces the exact failure described in the CR
+   - Uses GIVEN/WHEN/THEN naming
+   - Fails (red) before the fix
+   - Lives in the existing test file for that module
+
+```bash
+npx jest <specific-test-file> --runInBand
+```
+Test must fail here. If it passes, the reproduction is wrong — revisit.
+
+**Step 4 — Fix**
+
+8. Apply the minimal fix — change only what is needed to make the regression test pass
+9. Do not refactor surrounding code
+
+**Step 5 — Verify (green)**
+
+```bash
+npx jest <specific-test-file> --runInBand
+```
+Regression test passes. Then run the full suite:
+```bash
+npx jest --runInBand
+```
+No existing tests broken.
+
+**Step 6 — TypeScript check**
+
+```bash
+npx tsc --noEmit
+```
+
+**Step 7 — Update CR and close**
+
+Update `specs/cr/<cr-id>.cr.md`:
+```
+Status: OPEN → BUILT
+Changelog: | <today> | Bug fixed — regression test added and passing | |
+```
+
+Tell the developer:
+> **Bug fix complete for CR-<cr-id>.**
+>
+> Root cause: [one sentence]
+> Fix: [one sentence — what was changed]
+> Test added: [test name]
+>
+> Next step: run `/close CR-<cr-id>` to formally close.
 
 ---
 

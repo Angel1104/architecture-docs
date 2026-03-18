@@ -282,6 +282,24 @@ Always include a tenant isolation test for any CR that touches data access — e
 
 For a refactor CR: skip test generation, note that existing tests cover behavior.
 
+### Test separation: unit vs integration
+
+**Unit tests** (always, CI-safe):
+- Command/query handler tests with `FakeRepository` — no real DB
+- Domain model tests — pure Python
+
+**Integration tests** (explicitly opt-in, require real DB):
+- Repository adapter tests against real Postgres
+- Tag with `@pytest.mark.integration` and skip unless `DB_TEST_URL` is set:
+```python
+@pytest.mark.integration
+def test_repository_persists_entity():
+    # requires real DB — run with: pytest -m integration
+    ...
+```
+
+Never use `mock.patch` on SQLAlchemy sessions directly — use `FakeRepository` classes for all unit tests.
+
 ---
 
 ## Phase 8: Handoff

@@ -60,13 +60,16 @@ Load all relevant context before writing anything:
 
 Before drafting, decide the depth of each spec section based on the CR item:
 
-| CR characteristic | Spec depth |
-|---|---|
-| New module, new domain concept | All sections fully populated |
-| New endpoint on existing pattern | Problem statement, ports, adapter contracts, ACs, errors |
-| Security fix, tenant isolation gap | Problem statement, tenant isolation, ACs, error scenarios |
-| Refactor, structural improvement | Problem statement, bounded context, ACs only |
-| Incident follow-up | Problem statement, root cause, ACs, errors |
+| CR type | Sections required | Notes |
+|---------|------------------|-------|
+| `feature` (Normal) | All 10 sections | Full spec |
+| `feature` (High) | All 10 sections, leaner content | |
+| `change` | §1 Problem Statement, §7 Acceptance Criteria, §8 Error Scenarios | Lean — 3 sections only |
+| `refactor` | §1 Problem Statement, §2 Bounded Context, §7 Acceptance Criteria | Lean — ACs must prove no behavior change |
+| `security` | §1 Problem Statement, §6 Auth Perspective, §7 ACs, §8 Error Scenarios | |
+| `incident` follow-up | §1 Problem Statement + root cause, §7 ACs, §8 Error Scenarios | |
+
+**For `change` and `refactor`:** generate only required sections. These CRs skip `/plan` — lean spec → `/build` directly.
 
 A section that is not relevant to this CR should be marked `N/A — not applicable to this CR type` rather than left blank or padded with filler.
 
@@ -216,4 +219,6 @@ Tell the developer:
 >
 > [Brief summary: what the spec covers, key decisions made, any warnings noted]
 >
-> Next step: run `/plan CR-<cr-id>` to generate the implementation plan and tests.
+> Next step:
+> - `feature` / `security` → run `/plan CR-<cr-id>` to generate the implementation plan and tests
+> - `change` / `refactor` → run `/build CR-<cr-id>` directly — lean spec skips the plan stage

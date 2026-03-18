@@ -22,13 +22,20 @@ You are responsible for running the full CR pipeline automatically from spec to 
 1. Read `$ARGUMENTS` — extract the CR-ID
 2. Locate `specs/cr/<cr-id>.cr.md` — if missing, stop:
    > "No CR item found for <cr-id>. Run `/intake` first to create the CR item."
-3. Read the CR item — load type, severity, intent, assessment
-4. Determine the track:
-   - **Critical** → skip spec and plan, go straight to build (containment + fix), then close
-   - **High / Normal** → full pipeline: spec → plan → build → close
+3. Read the CR item — load **type**, severity, intent, assessment
+4. Determine the track from CR **type**:
+
+| CR Type | Track | Stages |
+|---------|-------|--------|
+| `feature` | Full | spec (10 sections) → plan → build → close |
+| `bug` | Minimal | build only (locate → regression test → fix) → close |
+| `change` | Lean | spec (3 sections) → build → close (no plan) |
+| `security` | Full | spec → plan → build → close |
+| `incident` | Containment-first | build (containment first) → close |
+| `refactor` | Lean | spec (3 sections) → build → close (no plan) |
+
 5. Report the starting state:
-   > "CR-<cr-id> loaded. Track: <track>. Starting at: <stage>."
-   > (If the CR is already mid-pipeline, resume from the correct stage)
+   > "CR-<cr-id> loaded. Type: <type> | Track: <track>. Starting at: <stage>."
 
 ---
 
@@ -38,8 +45,8 @@ If the CR item already has a status beyond OPEN, resume from the appropriate sta
 
 | CR Status | Resume at |
 |-----------|-----------|
-| OPEN | spec |
-| SPECCED | plan |
+| OPEN | first stage for this type (see track table above) |
+| SPECCED | plan (if `feature`/`security`) or build (if `change`/`refactor`) |
 | PLANNED | build |
 | BUILT | close |
 | CLOSED | nothing — tell the developer the CR is already closed |
@@ -63,22 +70,27 @@ All other decisions are made automatically.
 
 ## Stage 1: SPEC
 
-Run the spec stage for CR-<cr-id>:
+**Skip this stage for `bug` and `incident` types — go directly to Stage 3: BUILD.**
 
 1. Read the CR item — load intent, type, severity, assessment
-2. Draft the spec using the standard template — proportional to the CR
-3. Run multi-agent spec review (domain, architecture, security)
-4. Resolve all blockers autonomously
-5. **STOP** only if a business decision is needed → ask, wait, continue
-6. Lock the approved spec at `specs/cr/<cr-id>.spec.md`
-7. Update CR status: OPEN → SPECCED
-8. Report: "Spec approved. Moving to plan."
+2. Load `references/flutter_defaults.md` and `references/flutter_spec_template.md`
+3. Draft the spec proportional to the CR type:
+   - `feature` / `security` → full 10-section spec
+   - `change` / `refactor` → lean 3-section spec (§1 Problem Statement, §7 ACs, §8 Error Scenarios)
+4. Run multi-agent spec review (domain-analyst, sw-architect, security-engineer)
+5. Resolve all blockers autonomously
+6. **STOP** only if a business decision is needed → ask, wait, continue
+7. Lock the approved spec at `specs/cr/<cr-id>.spec.md`
+8. Update CR status: OPEN → SPECCED
+9. Report: "Spec approved. Moving to [plan / build]."
+   - `feature` / `security` → move to Stage 2: PLAN
+   - `change` / `refactor` → skip to Stage 3: BUILD
 
 ---
 
 ## Stage 2: PLAN
 
-Run the plan stage for CR-<cr-id>:
+**Skip this stage for `bug`, `change`, `refactor`, and `incident` types — go directly to Stage 3: BUILD.**
 
 1. Read the approved spec
 2. Identify implementation options
@@ -87,10 +99,10 @@ Run the plan stage for CR-<cr-id>:
    - Give a clear recommendation with reasoning
    - **STOP** → wait for human to confirm approach
 4. Generate layered implementation blueprint
-5. Generate proportional test skeletons
+5. Generate test skeletons (FakeRepository + BLoC tests) in `lib/features/<feature>/`
 6. Re-assess risk at implementation level
 7. **STOP** only if a new HIGH risk is found → present, ask how to proceed
-8. Write `specs/cr/plans/<cr-id>.plan.md` and `tests/<cr-id>/`
+8. Write `specs/cr/plans/<cr-id>.plan.md`
 9. Update CR status: SPECCED → PLANNED
 10. Report: "Plan confirmed. Moving to build."
 
@@ -98,23 +110,34 @@ Run the plan stage for CR-<cr-id>:
 
 ## Stage 3: BUILD
 
-Run the build stage for CR-<cr-id>:
-
-**For Critical track — containment first:**
-1. Advise immediate containment steps based on code and infrastructure knowledge
-2. Wait for human to confirm containment is in place
+**For `incident` type — containment first:**
+1. Advise immediate containment steps
+2. **STOP** → wait for human to confirm containment is in place
 3. Then proceed with fix
 
-**For all tracks:**
+**For `bug` type — TDD regression fix:**
+1. Read `specs/project.md` Feature Map — locate the affected file(s)
+2. Reproduce the bug from the CR description
+3. Write regression test first (TDD red) — GIVEN/WHEN/THEN naming
+4. Run test: `flutter test <specific-test-file>` — must FAIL
+5. Apply minimal fix — change only what is needed
+6. Run test again — must PASS (green)
+7. Run full suite: `flutter test`
+8. Analyze: `flutter analyze`
+9. Update CR status: OPEN → BUILT
+
+**For `feature`, `change`, `refactor`, `security` — layer by layer:**
 1. Read the plan and test skeletons
-2. Implement layer by layer: domain → application → adapters → config
-3. Run tests at each layer before moving forward
-4. If a layer fails: diagnose, propose fix, implement, re-run — do not proceed with failing tests
-5. Run multi-agent code review on completion
-6. Resolve all review findings autonomously unless a finding requires a business decision
-7. **STOP** only if an unexpected risk surfaces → state it, ask how to proceed
-8. Update CR status: PLANNED → BUILT
-9. Report: "Build complete. Moving to close."
+2. For each layer — TDD: run tests (RED) → implement → run tests (GREEN)
+3. Layer order: domain → application (BLoC) → infrastructure → presentation
+4. Run: `flutter test lib/features/<feature>/<layer>/` per layer
+5. If a layer fails: diagnose, fix, re-run — do not proceed with failing tests
+6. Run multi-agent code review on completion
+7. Resolve all review findings autonomously unless a finding requires a business decision
+8. **STOP** only if an unexpected risk surfaces → state it, ask how to proceed
+9. Analyze: `flutter analyze`
+10. Update CR status: PLANNED → BUILT (or OPEN → BUILT for `change`/`refactor`)
+11. Report: "Build complete. Moving to close."
 
 ---
 

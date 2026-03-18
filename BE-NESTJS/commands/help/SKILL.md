@@ -32,21 +32,25 @@ Critical incident fast track:
 
 | Command | Stage | What it does |
 |---------|-------|--------------|
-| `/intake` | Intake | Universal entry point. Bring anything — problem, bug, finding, request, incident, URL, file. Classifies, assesses risk, produces a CR item. |
-| `/cr <cr-id>` | Pipeline | Automated pipeline — runs spec → plan → build → close in sequence. Stops only at mandatory human gates. |
-| `/spec <cr-id>` | Spec | Full spec stage — draft, multi-agent review, revise, approve. Proportional to the CR. |
-| `/plan <cr-id>` | Plan | Implementation blueprint + test skeletons. Presents options, recommends one, human confirms. |
-| `/build <cr-id>` | Build | Implement layer by layer + code review + approve. Containment first for Critical CRs. |
-| `/close <cr-id>` | Close | Verify ACs, document decisions, lessons learned, follow-up CRs, formal closure. |
-| `/code-review` | Discovery | Multi-agent audit of existing NestJS code. Produces findings report. Feed output into `/intake`. |
+| `/init` | Setup | One-time project setup. Creates specs/project.md, scaffolds folder structure. Run once before anything else. |
+| `/intake` | Intake | Universal entry point. Bring anything — problem, bug, finding, request, incident, URL, file. Classifies into 6 CR types, produces a CR item. |
+| `/cr <cr-id>` | Pipeline | Automated pipeline — routes by CR type. Stops only at mandatory human gates. |
+| `/spec <cr-id>` | Spec | Full or lean spec — 10 sections for features, 3 sections for changes/refactors. Multi-agent review. |
+| `/plan <cr-id>` | Plan | Implementation blueprint + TDD tests written before code. Human confirms approach. |
+| `/build <cr-id>` | Build | TDD: red → green per layer. Code review. Containment for Critical/Security. Direct fix for bugs. |
+| `/close <cr-id>` | Close | Verify ACs, update project map, document decisions, formal closure. |
+| `/code-review` | Discovery | Multi-agent audit of existing NestJS code. Produces findings report. |
 
-### CR Severity & Tracks
+### CR Types & Tracks
 
-| Severity | Meaning | Track |
-|----------|---------|-------|
-| Critical | Production down, data at risk, security breach | `/intake` → `/build` (contain + fix) → `/close` |
-| High | Degraded, significant impact, time-sensitive | `/intake` → `/spec` (lean) → `/plan` → `/build` → `/close` |
-| Normal | Everything else | `/intake` → `/spec` → `/plan` → `/build` → `/close` |
+| Type | When to use | Track |
+|------|-------------|-------|
+| `feature` | New capability, new module, new endpoint | `/intake` → `/spec` (10 sections) → `/plan` → `/build` → `/close` |
+| `bug` | Existing behavior is broken | `/intake` → `/build` (locate → regression test → fix) → `/close` |
+| `change` | Small modification — config, limit, copy | `/intake` → `/spec` (3 sections) → `/build` → `/close` |
+| `security` | Auth gap, RLS breach, secrets, OIDC | `/intake` → `/spec` → `/plan` → `/build` → `/close` |
+| `incident` | Production down or data at risk | `/intake` → `/build` (contain first) → `/close` |
+| `refactor` | Internal restructure, no behavior change | `/intake` → `/spec` (3 sections) → `/build` → `/close` |
 
 ### CR-ID Format
 
@@ -62,9 +66,10 @@ Auto-generated at intake: `YYMMDD-HHMMSS` — e.g. `260311-143022`
 ### Artifacts produced
 
 ```
+specs/project.md                    ← Project memory (created by /init, updated by /close)
 specs/cr/<cr-id>.cr.md              ← CR item (created by /intake, updated through lifecycle)
-specs/cr/<cr-id>.spec.md            ← Spec (created by /spec)
-specs/cr/plans/<cr-id>.plan.md      ← Plan (created by /plan)
-src/modules/<m>/                    ← Test skeletons (created by /plan)
+specs/cr/<cr-id>.spec.md            ← Spec (created by /spec — full or lean)
+specs/cr/plans/<cr-id>.plan.md      ← Plan (created by /plan — features only)
+src/modules/<m>/                    ← TDD tests written before code (created by /plan)
 specs/reviews/<scope>-<date>.md     ← Review report (created by /code-review)
 ```

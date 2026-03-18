@@ -283,6 +283,21 @@ Always include a user isolation test for any CR that touches data access — eve
 
 For a refactor CR: skip test generation, note that existing tests cover behavior.
 
+### Test separation: unit vs integration
+
+**Unit tests** (always, run in CI):
+- BLoC tests with `FakeRepository` — no real HTTP
+- Use case tests — pure Dart
+
+**Widget/integration tests** (optional, heavier):
+- Full widget tests with `pumpWidget` + fake provider
+- These may require more setup — run separately if needed:
+```bash
+flutter test test/features/<feature>/presentation/
+```
+
+Never use Mockito for domain repository interfaces — always use `FakeRepository` classes that implement the interface. Mockito is only for external services (Firebase, Dio interceptors) where a fake would be too complex.
+
 ---
 
 ## Phase 8: Handoff

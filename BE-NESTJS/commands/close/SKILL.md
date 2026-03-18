@@ -26,7 +26,9 @@ You are responsible for formally closing a CR. You verify all acceptance criteri
    > "No CR item found. Run `/intake` first."
 3. Read the CR item — check status is `BUILT`. If not:
    - Anything earlier → "Build not complete. Run `/build CR-<cr-id>` first."
-4. Locate `specs/cr/<cr-id>.spec.md` and `specs/cr/plans/<cr-id>.plan.md` — both must exist.
+4. For `feature`, `security`, `refactor` CRs: locate both `specs/cr/<cr-id>.spec.md` and `specs/cr/plans/<cr-id>.plan.md` — both must exist.
+   For `bug` CRs: only the CR item is required — no spec or plan file needed.
+   For `change` CRs: only the spec file is required — no plan file needed.
 
 ---
 
@@ -130,6 +132,24 @@ Append to the end of the file:
 **Lessons Learned:** <only if flagged>
 **Follow-up CRs:** <only if any, otherwise omit>
 ```
+
+---
+
+## Phase 5b: Update specs/project.md Feature Map (feature CRs only)
+
+If CR type is `feature`, update `specs/project.md`:
+
+1. Read `specs/project.md`
+2. Find the `## Module Map` section
+3. For the module that was built, update or add a row:
+
+| Módulo | Archivos clave | Use cases | Endpoints expuestos |
+|--------|---------------|-----------|---------------------|
+| `<module-name>` | `src/modules/<name>/domain/entities/<Entity>.ts`, `src/modules/<name>/application/use-cases/<UseCase>.usecase.ts`, `src/modules/<name>/infrastructure/adapters/<Name>Repository.ts`, `src/modules/<name>/interface/controllers/<Name>Controller.ts` | `<UseCase1>`, `<UseCase2>` | `POST /v1/<name>`, `GET /v1/<name>` |
+
+Fill in actual file paths, use case names, and endpoint routes from the implementation just completed.
+
+This keeps the project map current so `/intake` can locate files for future bugs without scanning the codebase.
 
 ---
 
