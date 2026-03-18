@@ -193,39 +193,93 @@ Layer by layer, inside-out:
 
 ## Phase 7: Generate Test Skeletons
 
-Create test files under `tests/<cr-id>/` proportional to the CR.
+Create test files under `test/features/<feature>/` proportional to the CR.
 
-For each acceptance criterion in the spec, generate a test skeleton:
+**TDD rule — tests are written complete, not as skeletons.**
+Each test case must have:
+- A real `blocTest` or `test` name from the AC (GIVEN/WHEN/THEN language)
+- Full test body: arrange (fake repository or mock), act (BLoC event), assert (BLoC state)
+- FakeRepository implementations that implement the domain repository interface — NEVER mockito.mock of a repository
+- The test MUST fail (red) before implementation — if it passes immediately, it is not a real test
 
-```python
-# tests/<cr-id>/test_<feature>.py
+Do NOT use placeholder comments or empty test bodies.
+The tests written here are the actual tests that will gate the build.
 
-class TestCR<crId>:
-    """
-    CR-<cr-id>: <one-line summary>
-    AC-<n>: <acceptance criterion text>
-    """
+### Before writing tests: create FakeRepository
 
-    async def test_<ac_description>_happy_path(self):
-        # GIVEN
-        # WHEN
-        # THEN
-        raise NotImplementedError
+For each domain repository interface, create a fake in `test/features/<feature>/fakes/`:
 
-    async def test_<ac_description>_tenant_isolation(self):
-        # GIVEN two tenants with similar data
-        # WHEN tenant A's operation runs
-        # THEN tenant B's data is not affected or visible
-        raise NotImplementedError
+```dart
+// test/features/<feature>/fakes/fake_feature_repository.dart
+// In-memory fake — implements the domain interface, used in BLoC tests
+// Never use Mockito for domain repositories — fakes give better guarantees
 
-    async def test_<ac_description>_<edge_case>(self):
-        # GIVEN
-        # WHEN
-        # THEN
-        raise NotImplementedError
+class FakeFeatureRepository implements FeatureRepository {
+  final Map<String, List<FeatureItem>> _store = {};
+
+  @override
+  Future<List<FeatureItem>> getItems(String userId) async {
+    return _store[userId] ?? [];
+  }
+
+  // Test helper
+  void seed({required String userId, required List<dynamic> items}) {
+    _store[userId] = items.map((i) => FeatureItem(id: i)).toList();
+  }
+}
 ```
 
-Always include a tenant isolation test for any CR that touches data access — even if not explicitly in the ACs.
+For each acceptance criterion in the spec, generate a complete test:
+
+```dart
+// test/features/<feature>/application/blocs/<feature>_bloc_test.dart
+// TDD: This test is written BEFORE the BLoC implementation.
+// It will fail (red) until the BLoC is implemented.
+
+import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:<app>/features/<feature>/application/blocs/<feature>_bloc.dart';
+import '../fakes/fake_<feature>_repository.dart';
+
+void main() {
+  late FeatureBloc bloc;
+  late FakeFeatureRepository repository;
+
+  setUp(() {
+    repository = FakeFeatureRepository();
+    bloc = FeatureBloc(repository: repository);
+  });
+
+  tearDown(() => bloc.close());
+
+  // AC-1: GIVEN an authenticated user WHEN they load the feature THEN data is shown
+  blocTest<FeatureBloc, FeatureState>(
+    'emits [loading, loaded] when LoadFeature succeeds',
+    build: () => bloc,
+    act: (b) => b.add(LoadFeature(userId: 'user-1')),
+    expect: () => [
+      const FeatureState.loading(),
+      isA<FeatureState>().having((s) => s.items, 'items', isNotEmpty),
+    ],
+  );
+
+  // User isolation — mandatory
+  blocTest<FeatureBloc, FeatureState>(
+    'only loads data for the authenticated userId — never another user data',
+    build: () {
+      repository.seed(userId: 'user-2', items: ['other-user-data']);
+      return bloc;
+    },
+    act: (b) => b.add(LoadFeature(userId: 'user-1')),
+    expect: () => [
+      const FeatureState.loading(),
+      const FeatureState.loaded(items: []), // user-1 has no data
+    ],
+  );
+}
+```
+
+Always include a user isolation test for any CR that touches data access — even if not explicitly in the ACs.
 
 For a refactor CR: skip test generation, note that existing tests cover behavior.
 

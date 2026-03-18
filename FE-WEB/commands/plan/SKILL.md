@@ -181,33 +181,58 @@ Layer by layer, inside-out:
 
 Create test files under `src/features/<feature>/__tests__/` proportional to the CR.
 
-For each acceptance criterion in the spec, generate a test skeleton:
+For each acceptance criterion in the spec, generate a test:
+
+**TDD rule — tests are written complete, not as skeletons.**
+Each test case must have:
+- A real `describe` and `it` name from the AC (GIVEN/WHEN/THEN language)
+- Full test body: arrange (msw handler), act (renderHook or render), assert
+- msw handlers for every API endpoint the feature calls — NEVER mock ApiClient directly
+- The test MUST fail (red) before implementation — if it passes immediately, it is not a real test
+
+Do NOT use `throw new Error('Not implemented')` or `// TODO` placeholders.
+The tests written here are the actual tests that will gate the build.
 
 ```typescript
-// src/features/<feature>/__tests__/<layer>/<name>.test.ts
+// src/features/<feature>/__tests__/application/useFeature.test.ts
+// TDD: This test is written BEFORE the implementation.
+// It will fail (red) until the hook is implemented.
 
-describe('CR-<crId>: <one-line summary>', () => {
-  // AC-N: GIVEN <precondition> WHEN <action> THEN <outcome>
-  it('<ac description> — happy path', async () => {
-    // GIVEN
-    // WHEN
-    // THEN
-    throw new Error('Not implemented')
-  })
+import { renderHook, waitFor } from '@testing-library/react'
+import { useFeature } from '../../application/hooks/useFeature'
+import { server } from '@/__mocks__/server'
+import { http, HttpResponse } from 'msw'
 
-  it('<ac description> — unauthenticated user is redirected', async () => {
-    // GIVEN user is not authenticated
-    // WHEN accessing the route
-    // THEN user is redirected to login
-    throw new Error('Not implemented')
-  })
+// AC-1: GIVEN an authenticated user WHEN they load the feature THEN the data is displayed
+it('returns the feature data for the authenticated user', async () => {
+  server.use(
+    http.get('/v1/feature', () => HttpResponse.json({ id: '1', name: 'Test Feature' }))
+  )
+  const { result } = renderHook(() => useFeature())
+  await waitFor(() => expect(result.current.status).toBe('loaded'))
+  expect(result.current.data?.name).toBe('Test Feature')
+})
 
-  it('<ac description> — error state displayed on API failure', async () => {
-    // GIVEN API returns 500
-    // WHEN component renders
-    // THEN error message is shown
-    throw new Error('Not implemented')
-  })
+// AC-2: GIVEN the API returns 401 WHEN the hook runs THEN the user is redirected to login
+it('redirects to login when the token is expired', async () => {
+  server.use(
+    http.get('/v1/feature', () => HttpResponse.json({}, { status: 401 }))
+  )
+  const { result } = renderHook(() => useFeature())
+  await waitFor(() => expect(result.current.status).toBe('unauthenticated'))
+})
+
+// User isolation — mandatory for any authenticated route
+it('only returns data for the authenticated user — never another user\'s data', async () => {
+  server.use(
+    http.get('/v1/feature', ({ request }) => {
+      // Verify Bearer token is always sent
+      expect(request.headers.get('Authorization')).toMatch(/^Bearer /)
+      return HttpResponse.json({ id: 'user-1-data' })
+    })
+  )
+  const { result } = renderHook(() => useFeature())
+  await waitFor(() => expect(result.current.status).toBe('loaded'))
 })
 ```
 

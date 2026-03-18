@@ -195,34 +195,87 @@ Layer by layer, inside-out:
 
 Create test files under `tests/<cr-id>/` proportional to the CR.
 
-For each acceptance criterion in the spec, generate a test skeleton:
+**TDD rule — tests are written complete, not as skeletons.**
+Each test case must have:
+- A real test function name from the AC (given_when_then naming)
+- Full test body: arrange (fake repository or in-memory store), act (call use case or command), assert
+- FakeRepository classes that implement the domain port interface — NEVER mock SQLAlchemy or Prisma sessions directly
+- The test MUST fail (red) before implementation — if it passes immediately, it is not a real test
+
+Do NOT use `pass`, `raise NotImplementedError`, or empty bodies.
+The tests written here are the actual tests that will gate the build.
+
+### Before writing tests: create FakeRepository
+
+For each domain port interface, create a fake in `tests/fakes/`:
 
 ```python
-# tests/<cr-id>/test_<feature>.py
+# tests/fakes/fake_name_repository.py
+# In-memory implementation of NameRepository port — used in application tests only
 
-class TestCR<crId>:
-    """
-    CR-<cr-id>: <one-line summary>
-    AC-<n>: <acceptance criterion text>
-    """
+from src.domain.ports.name_repository import NameRepository
+from src.domain.models.name import Name
 
-    async def test_<ac_description>_happy_path(self):
-        # GIVEN
-        # WHEN
-        # THEN
-        raise NotImplementedError
+class FakeNameRepository(NameRepository):
+    def __init__(self):
+        self._store: list[Name] = []
 
-    async def test_<ac_description>_tenant_isolation(self):
-        # GIVEN two tenants with similar data
-        # WHEN tenant A's operation runs
-        # THEN tenant B's data is not affected or visible
-        raise NotImplementedError
+    def find_by_id(self, id: str) -> Name | None:
+        return next((n for n in self._store if n.id == id), None)
 
-    async def test_<ac_description>_<edge_case>(self):
-        # GIVEN
-        # WHEN
-        # THEN
-        raise NotImplementedError
+    def find_by_tenant(self, tenant_uid: str) -> list[Name]:
+        return [n for n in self._store if n.tenant_uid == tenant_uid]
+
+    def save(self, name: Name) -> None:
+        self._store.append(name)
+
+    def exists_by_value(self, tenant_uid: str, value: str) -> bool:
+        return any(n.tenant_uid == tenant_uid and n.value == value for n in self._store)
+
+    # Test helpers
+    def find_all(self) -> list[Name]: return self._store
+    def seed(self, **kwargs) -> None: self._store.append(Name(id='seed-id', **kwargs))
+    def clear(self) -> None: self._store = []
+```
+
+For each acceptance criterion in the spec, generate a complete test:
+
+```python
+# tests/<cr-id>/test_domain_<feature>.py
+# TDD: This test is written BEFORE the implementation.
+# It will fail (red) until the use case is implemented.
+
+import pytest
+from src.application.commands.create_name import CreateNameCommand, CreateNameHandler
+from tests.fakes.fake_name_repository import FakeNameRepository
+from src.domain.exceptions import NameAlreadyExistsError
+
+class TestCreateNameCommand:
+    def setup_method(self):
+        self.repo = FakeNameRepository()
+        self.handler = CreateNameHandler(name_repository=self.repo)
+
+    # AC-1: GIVEN a valid payload WHEN create is called THEN name is persisted
+    def test_creates_name_and_returns_entity(self):
+        command = CreateNameCommand(tenant_uid='tenant-a', user_id='user-1', value='Acme Corp')
+        result = self.handler.handle(command)
+        assert result.value == 'Acme Corp'
+        assert len(self.repo.find_all()) == 1
+
+    # AC-2: GIVEN a duplicate name WHEN create is called THEN NameAlreadyExistsError is raised
+    def test_raises_error_when_name_already_exists(self):
+        self.repo.seed(tenant_uid='tenant-a', value='Acme Corp')
+        command = CreateNameCommand(tenant_uid='tenant-a', user_id='user-1', value='Acme Corp')
+        with pytest.raises(NameAlreadyExistsError):
+            self.handler.handle(command)
+
+    # Tenant isolation — mandatory
+    def test_tenant_a_cannot_see_tenant_b_data(self):
+        self.repo.seed(tenant_uid='tenant-b', value='Other Corp')
+        command = CreateNameCommand(tenant_uid='tenant-a', user_id='user-1', value='My Corp')
+        self.handler.handle(command)
+        assert len(self.repo.find_by_tenant('tenant-a')) == 1
+        assert len(self.repo.find_by_tenant('tenant-b')) == 1  # unchanged
 ```
 
 Always include a tenant isolation test for any CR that touches data access — even if not explicitly in the ACs.

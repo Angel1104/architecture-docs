@@ -123,7 +123,7 @@ Layer-by-layer implementation order:
 
 ## Phase 4: Generate Test Skeletons
 
-Create test skeleton files in `src/modules/<name>/`:
+Create test files in `src/modules/<name>/`:
 
 **Domain entity tests:**
 ```
@@ -145,11 +145,98 @@ src/modules/<name>/interface/controllers/__tests__/<Name>Controller.spec.ts
 src/modules/<name>/infrastructure/adapters/__tests__/<Name>Repository.spec.ts
 ```
 
-Each skeleton includes:
+### Before writing tests: create the FakeRepository
+
+For each new port interface, create a fake implementation in `src/modules/<name>/application/__fakes__/`:
+
+```typescript
+// src/modules/<name>/application/__fakes__/FakeNameRepository.ts
+// In-memory implementation of INameRepository — used in use case tests only
+// Never use jest.mock(PrismaService) — fakes implement the port contract
+
+import { INameRepository } from '../../domain/ports/INameRepository'
+import { Name } from '../../domain/entities/Name'
+
+export class FakeNameRepository implements INameRepository {
+  private store: Name[] = []
+
+  async findById(id: string) { return this.store.find(n => n.id === id) ?? null }
+  async findByTenant(tenantId: string) { return this.store.filter(n => n.tenantId === tenantId) }
+  async save(name: Name) { this.store.push(name) }
+  async delete(id: string) { this.store = this.store.filter(n => n.id !== id) }
+  async existsByValue(tenantId: string, value: string) {
+    return this.store.some(n => n.tenantId === tenantId && n.value === value)
+  }
+
+  // Test helpers
+  findAll() { return this.store }
+  seed(partial: Partial<Name>) { this.store.push({ id: 'seed-id', ...partial } as Name) }
+  clear() { this.store = [] }
+}
+```
+
+Each test file includes:
 - `describe` block with the test subject name
 - `it` blocks derived from the spec's acceptance criteria (one `it` per AC)
 - `it` blocks for mandatory adversarial cases: tenant isolation, invalid auth, input validation
-- `// TODO: implement` comments
+
+**TDD rule — tests are written complete, not as skeletons.**
+Each test case must have:
+- A real `describe` and `it` name from the AC (GIVEN/WHEN/THEN language)
+- The full test body: arrange, act, assert
+- A `FakeRepository` that implements the domain port interface (NOT jest.mock)
+- The test MUST fail (red) when run before implementation — if it passes, it is not a real test
+
+Do NOT use `throw new Error('Not implemented')` or `// TODO` placeholders.
+The tests written here are the actual tests that will gate the build.
+
+Example use case test:
+
+```typescript
+// src/modules/<name>/application/use-cases/__tests__/CreateName.usecase.spec.ts
+// TDD: This test is written BEFORE the implementation.
+// It will fail (red) until the use case is implemented.
+
+import { CreateNameUseCase } from '../CreateName.usecase'
+import { FakeNameRepository } from '../../__fakes__/FakeNameRepository'
+
+describe('CreateNameUseCase — CR-<crId>', () => {
+  let useCase: CreateNameUseCase
+  let repo: FakeNameRepository
+
+  beforeEach(() => {
+    repo = new FakeNameRepository()
+    useCase = new CreateNameUseCase(repo)
+  })
+
+  // AC-1: GIVEN an admin user WHEN they create a name with a valid payload THEN the name is persisted
+  it('persists the name and returns the created entity', async () => {
+    const result = await useCase.execute({
+      tenantId: 'tenant-a',
+      userId: 'user-1',
+      value: 'Acme Corp',
+    })
+    expect(result.value).toBe('Acme Corp')
+    expect(repo.findAll()).toHaveLength(1)
+  })
+
+  // AC-2: GIVEN a name already exists WHEN the same name is submitted THEN NameAlreadyExistsError is thrown
+  it('throws NameAlreadyExistsError when name already exists in tenant', async () => {
+    await repo.seed({ tenantId: 'tenant-a', value: 'Acme Corp' })
+    await expect(
+      useCase.execute({ tenantId: 'tenant-a', userId: 'user-1', value: 'Acme Corp' })
+    ).rejects.toThrow(NameAlreadyExistsError)
+  })
+
+  // Tenant isolation — mandatory for every module
+  it('cannot see names from a different tenant', async () => {
+    await repo.seed({ tenantId: 'tenant-b', value: 'Other Corp' })
+    const result = await useCase.execute({ tenantId: 'tenant-a', userId: 'user-1', value: 'My Corp' })
+    expect(repo.findByTenant('tenant-a')).toHaveLength(1)
+    expect(repo.findByTenant('tenant-b')).toHaveLength(1) // unchanged
+  })
+})
+```
 
 ---
 
