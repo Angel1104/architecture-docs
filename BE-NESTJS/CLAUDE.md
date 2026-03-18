@@ -8,10 +8,21 @@ This project uses the NestJS Spec-Driven Development Methodology Kit. These rule
 /intake → /spec → /plan → /build → /close
 ```
 
-> Run `/cr <description>` to execute the full pipeline automatically. It stops only at mandatory human gates.
-> If `/spec` returns REVISIONS NEEDED, resolve blockers and re-review. Repeat until APPROVED.
+> Run `/init` once before anything else to set up the project context and folder structure.
+> Run `/cr <cr-id>` to execute the full pipeline automatically after `/intake`. It stops only at mandatory human gates.
 
 No stage may be skipped. Implementation without a reviewed spec is blocked by the hook.
+
+## CR Types & Tracks
+
+| Type | Track | Stages |
+|------|-------|--------|
+| `feature` | Full | spec (10 sections) → plan → build → close |
+| `bug` | Minimal | build only (locate → regression test → fix) → close |
+| `change` | Lean | spec (3 sections) → build → close |
+| `security` | Full | spec → plan → build → close |
+| `incident` | Containment-first | build (containment first) → close |
+| `refactor` | Lean | spec (3 sections) → build → close |
 
 ## 16 Principles
 
@@ -112,13 +123,14 @@ await prisma.withTenant(tenantId, async (tx) => {
 
 | Command | Stage | Description |
 |---------|-------|-------------|
+| `/init` | Setup | One-time project setup. Creates `specs/project.md`, scaffolds folder structure. Run once before anything else. |
 | `/intake <description>` | Intake | Universal entry point — classifies any issue and produces a CR item |
 | `/spec <cr-id>` | Spec | Drafts spec → multi-agent review → revise → approve |
 | `/plan <cr-id>` | Plan | Translates spec into layered implementation blueprint + test skeletons |
 | `/build <cr-id>` | Build | Implements plan layer by layer, runs tests, code review, approves |
 | `/close <cr-id>` | Close | Verifies ACs, documents outcome, formally closes CR |
-| `/code-review [scope]` | Discovery | Multi-agent code audit → produces findings report |
-| `/cr <description>` | Pipeline | Automated full pipeline: intake → spec → plan → build → close |
+| `/code-review [scope]` | Discovery | Multi-agent code audit → produces findings report → offers to create CR items |
+| `/cr <cr-id>` | Pipeline | Automated full pipeline: spec → plan → build → close |
 | `/help` | — | Prints this command reference |
 
 ## Available Agents

@@ -1,21 +1,33 @@
-# comocom Flutter SDM Kit
+# Flutter SDM Kit
 
-This project uses the comocom Flutter Spec-Driven Development Methodology Kit. These rules are always active. This kit is Flutter/Dart only — no `--platform` flag is needed.
+This project uses the Flutter Spec-Driven Development Methodology Kit. These rules are always active. This kit is Flutter/Dart only.
 
 ## Methodology Flow
 
 ```
-/spec-init → /spec-review → /spec-revise → /spec-review → /plan → /test-gen → /implement → Validate
+/intake → /spec → /plan → /build → /close
 ```
 
-> If `/spec-review` returns REVISIONS NEEDED, run `/spec-revise` to resolve all blockers, then re-review. Repeat until APPROVED.
+> Run `/cr <cr-id>` to execute the full pipeline automatically after `/intake`. It stops only at mandatory human gates.
+> Run `/init` once before anything else to set up the project context and folder structure.
 
-No stage may be skipped. Implementation without a reviewed spec is blocked by the Dart hook.
+No stage may be skipped. Implementation without a reviewed spec is blocked by the hook.
+
+## CR Types & Tracks
+
+| Type | Track | Stages |
+|------|-------|--------|
+| `feature` | Full | spec (10 sections) → plan → build → close |
+| `bug` | Minimal | build only (locate → regression test → fix) → close |
+| `change` | Lean | spec (3 sections) → build → close |
+| `security` | Full | spec → plan → build → close |
+| `incident` | Containment-first | build (containment first) → close |
+| `refactor` | Lean | spec (3 sections) → build → close |
 
 ## 16 Principles
 
 1. **Spec first, code second.** Every feature starts as a specification in `specs/`. No implementation without a reviewed spec.
-2. **Tests before code.** Test cases (BLoC tests, widget tests, use case tests) are derived from acceptance criteria BEFORE implementation begins.
+2. **Tests before code.** Test cases (BLoC tests, widget tests, use case tests) are derived from acceptance criteria BEFORE implementation begins. Tests run RED before any implementation code is written.
 3. **The domain layer is sacred.** `lib/features/<f>/domain/` has ZERO Flutter SDK, Dio, Hive, or Firebase imports. Pure Dart only.
 4. **Repositories define contracts.** All data access flows through abstract repository interfaces in `domain/repositories/`. No concrete implementations in the domain layer.
 5. **Infrastructure is replaceable.** Swapping a repository implementation (e.g., Dio → GraphQL) must never require touching domain or application code.
@@ -27,7 +39,7 @@ No stage may be skipped. Implementation without a reviewed spec is blocked by th
 11. **Explicit over implicit.** No global state, no ambient context. `userId` and dependencies are passed explicitly through constructors and `get_it`.
 12. **Errors are typed Failures.** Domain and application layers return `Either<Failure, T>`. Infrastructure maps `DioException` → typed `Failure`. `DioException` never crosses the infrastructure boundary.
 13. **Review before merge.** Multi-agent review (spec, architecture, security) catches issues before code reaches production.
-14. **Automate enforcement.** The Dart hook blocks writes to `lib/features/` if no reviewed spec exists. `flutter analyze` catches boundary violations.
+14. **Automate enforcement.** The hook blocks writes to `lib/features/` if no reviewed spec exists. `flutter analyze` catches boundary violations.
 15. **Name things precisely.** Specs use kebab-case (`user-profile`). Repositories describe capabilities (`UserRepository`), not implementations (`DioUserRepository`).
 16. **Document decisions.** Architecture decisions, trade-offs, and rejected alternatives are captured in specs, not lost in chat threads.
 
@@ -35,7 +47,7 @@ No stage may be skipped. Implementation without a reviewed spec is blocked by th
 
 These are HARD blockers. Code violating any of these must not proceed.
 
-1. **No implementation without a spec.** The `enforce-spec-first.dart` hook blocks writes to `lib/features/` if no reviewed spec exists.
+1. **No implementation without a spec.** The `enforce-spec-first.js` hook blocks writes to `lib/features/` if no reviewed spec exists.
 2. **No Flutter/Dio/Hive imports in domain.** Any external package import in `lib/features/<f>/domain/` is a boundary violation.
 3. **No data access without userId.** Every repository method must accept `userId` as a parameter. No query or cache operation executes without user scoping.
 4. **No tokens in SharedPreferences.** Access and refresh tokens must be stored in `FlutterSecureStorage` only. Never SharedPreferences. Never in-memory across sessions.
@@ -84,44 +96,43 @@ core/            → everything (composition root)
 
 ## Available Commands
 
-| Command | Role | Stage | Description |
-|---------|------|-------|-------------|
-| `/spec-init <feature>` | Domain Analyst | Spec | Interactive wizard — draws out Flutter feature requirements, adds domain intelligence, generates spec |
-| `/spec-review <feature>` | — (orchestrator) | Review | Runs domain-analyst, sw-architect, and security-engineer on the spec; produces consolidated verdict |
-| `/spec-revise <feature>` | Senior Software Architect | Revise | Resolves all blockers and warnings from the review; asks user only for business decisions |
-| `/spec-auto <feature>` | — (orchestrator) | Review | Automated review-revise loop — repeats until APPROVED, pauses only for business decisions |
-| `/plan <feature>` | Technical Architect | Plan | Translates reviewed spec into layered Flutter implementation blueprint |
-| `/test-gen <feature>` | QA Engineer | Test | Generates BLoC tests, use case tests, widget tests, integration tests (TDD — before code) |
-| `/implement <feature>` | Flutter Engineer | Build | Implements feature from plan, inside-out Clean Architecture order |
-| `/code-auto <feature>` | Technical Lead | Build | Fully automated pipeline — implement, test each layer, code-review, report |
-| `/code-review <feature>` | — (orchestrator) | Review | Multi-agent code review: standards, security, performance |
-| `/debug <feature>` | — (orchestrator) | Debug | Root cause analysis on failing tests, Dart errors, or BLoC issues |
+| Command | Stage | Description |
+|---------|-------|-------------|
+| `/init` | Setup | One-time project setup. Creates `specs/project.md`, scaffolds folder structure. Run once before anything else. |
+| `/intake <description>` | Intake | Universal entry point — classifies any issue and produces a CR item |
+| `/spec <cr-id>` | Spec | Drafts spec → multi-agent review → revise → approve |
+| `/plan <cr-id>` | Plan | Translates spec into layered implementation blueprint + test skeletons |
+| `/build <cr-id>` | Build | Implements plan layer by layer, runs tests, code review, approves |
+| `/close <cr-id>` | Close | Verifies ACs, documents outcome, formally closes CR |
+| `/code-review [scope]` | Discovery | Multi-agent code audit → produces findings report → offers to create CR items |
+| `/cr <cr-id>` | Pipeline | Automated full pipeline: spec → plan → build → close |
+| `/help` | — | Prints this command reference |
 
 ## Available Agents
 
 | Agent | Expertise | Can Help With |
 |-------|-----------|---------------|
-| `domain-analyst` | Requirements & specifications | Review spec; draft/refine specs; detect edge cases; write acceptance criteria |
-| `sw-architect` | System design & Clean Architecture | Review architecture; verify BLoC contracts; validate repository interfaces; plan features |
-| `security-engineer` | Security & threat modeling | Token storage review; auth interceptor design; user isolation audit; input validation |
-| `qa-engineer` | Testing & quality | BLoC test generation; widget test generation; user isolation tests; adversarial thinking |
-| `flutter-engineer` | Flutter + Dart implementation | Feature implementation; code review; state management design; auth flows; debugging |
+| `domain-analyst` | Requirements & specifications | Spec review, edge cases, acceptance criteria, scope |
+| `sw-architect` | Flutter Clean Architecture | Layer boundaries, BLoC contracts, repository interfaces, dependency direction |
+| `security-engineer` | Security & threat modeling | Token storage, auth interceptor, user isolation, input validation |
+| `qa-engineer` | Testing & quality | FakeRepository pattern, BLoC tests, widget tests, user isolation tests |
+| `flutter-engineer` | Flutter + Dart implementation | Feature implementation, BLoC, Dio, auth flows, debugging |
 
-> `/spec-review` orchestrates `domain-analyst` + `sw-architect` + `security-engineer` for spec review.
-> All agents can also be invoked independently for any task within their expertise.
+> `/spec` and `/build` orchestrate multi-agent reviews automatically.
+> All agents can also be invoked independently.
 
 ## References
 
-All reference files are in `.claude/references/`:
+All reference files are in `references/`:
 
-- `flutter_defaults.md` — Flutter Technical Constitution: every pre-decided Flutter default (auth, storage, BLoC patterns, navigation, error handling, testing). Applied automatically by commands.
+- `flutter_defaults.md` — Flutter Technical Constitution: every pre-decided default (auth, storage, BLoC patterns, navigation, error handling, testing). Applied automatically by commands.
 - `flutter_spec_template.md` — Flutter spec format (screens, BLoC contracts, offline behavior, permissions, auth context, navigation flows).
 
 ## Stack
 
 - **Mobile**: Flutter / Dart
 - **Auth**: Firebase Authentication (JWT with custom claims)
-- **Backend**: GCP (API calls via Dio; backend enforces tenant/user isolation server-side)
+- **Backend**: NestJS on Cloud Run (API calls via Dio — backend enforces RLS)
 - **Architecture**: Clean Architecture + BLoC + Event-Driven UI
 - **User isolation**: `userId` from JWT claim scopes all data access; local cache keyed by `userId`
 
@@ -138,7 +149,6 @@ All reference files are in `.claude/references/`:
 | `get_it` | Dependency injection service locator |
 | `dartz` | `Either<Failure, T>` for typed error handling |
 | `bloc_test` | BLoC unit testing |
-| `mockito` + `build_runner` | Mocking for tests |
 | `shimmer` | Skeleton loading screens |
 | `hive` | Local structured cache (user-scoped) |
 | `firebase_crashlytics` | Error reporting |

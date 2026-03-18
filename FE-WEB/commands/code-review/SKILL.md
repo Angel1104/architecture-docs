@@ -117,24 +117,25 @@ Date: <today>
 
 ---
 
-## Handoff to Intake
+## Handoff — Create CR Items
 
-Always end with:
+After the report, if there are any findings that require action:
 
-> **What to do with these findings:**
+1. **Save the report** — always save to `specs/reviews/<scope>-<date>.md`
+
+2. **Offer to create CR items immediately:**
+
+> "I found **X critical** and **Y high** findings. Want me to create CR items for these now?
 >
-> Run `/intake` and pass this report — it will classify each finding, assess risk and priority, and produce CR items ready for the process.
+> I'll run `/intake` on the report and produce a prioritized set of CR items ready for the process — you confirm or adjust before I write anything.
 >
-> Example: `/intake specs/reviews/<scope>-<date>.md`
->
-> Or describe the most critical finding directly: `/intake "critical: user data exposed in <component>"`
+> Just say **yes** to proceed, or **skip** to handle it manually later."
 
-If the verdict is APPROVED and no findings require action: no intake needed. State this clearly.
+3. **If the developer says yes:**
+   - Run `/intake specs/reviews/<scope>-<date>.md`
+   - `/intake` will classify each finding, group related ones, assess risk and priority, and produce CR items
+   - Present the full CR assessment before writing any CR files — wait for confirmation
 
----
-
-## Save the Report (optional)
-
-If the scope is broad, offer to save the report:
-
-> "Save this report to `specs/reviews/<scope>-<date>.md` so you can pass it to `/intake`?"
+4. **If the verdict is APPROVED** and no findings require action:
+   - State this clearly: "No CR items needed — codebase is clean."
+   - Do not offer to create CRs.
