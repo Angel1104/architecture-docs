@@ -28,6 +28,7 @@ Lee este documento completo primero. Luego navega al documento de tu plataforma:
 5. [Flujos de datos del sistema](#5-flujos-de-datos-del-sistema)
 6. [Infraestructura y despliegue](#6-infraestructura-y-despliegue)
 7. [Observabilidad](#7-observabilidad)
+8. [Contrato de API](#8-contrato-de-api)
 8. [Gestión de secretos](#8-gestión-de-secretos)
 9. [Reglas no negociables](#9-reglas-no-negociables)
 
@@ -336,7 +337,32 @@ La implementación completa de OpenTelemetry y alertas vive en `ARCHITECTURE_BAC
 
 ---
 
-## 8. Gestión de secretos
+## 8. Contrato de API
+
+### Versionado
+
+Todos los endpoints públicos viven bajo `/v1/`. El versionado es por URL.
+
+**Breaking change** (requiere `/v2/`): eliminar o renombrar campos de respuesta, cambiar tipo de campo, cambiar semántica de parámetro existente.
+
+**No es breaking change** (no requiere `/v2/`): añadir campos opcionales a la respuesta, añadir parámetros opcionales, añadir endpoints nuevos.
+
+La implementación y el proceso completo de versionado viven en `ARCHITECTURE_BACKEND.md` sección 13.
+
+### Paginación
+
+Todos los endpoints de listado usan **paginación cursor-based**. No se usa offset/page number.
+
+```
+GET /v1/[recurso]?cursor=[id]&limit=20
+→ { data: [...], nextCursor: "abc123" | null, hasMore: true | false }
+```
+
+La implementación completa del contrato y los tipos viven en `ARCHITECTURE_BACKEND.md` sección 14.
+
+---
+
+## 9. Gestión de secretos
 
 **Reglas universales — aplican a todas las capas:**
 
@@ -354,7 +380,7 @@ La implementación completa de OpenTelemetry y alertas vive en `ARCHITECTURE_BAC
 
 ---
 
-## 9. Reglas no negociables
+## 10. Reglas no negociables
 
 Estas reglas no tienen excepciones por deadline, por "es solo temporal" ni por preferencia personal.
 

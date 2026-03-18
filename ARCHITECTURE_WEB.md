@@ -139,7 +139,9 @@ La capa web solo gestiona la identidad del usuario en el cliente:
 1. Usuario hace login → Firebase emite JWT.
 2. El hook `useAuth` (en `features/auth/hooks/`) observa el estado de `onAuthStateChanged`.
 3. El ApiClient llama `getIdToken()` antes de cada request para obtener el token vigente (Firebase refresca automáticamente si está expirado).
-4. Si el backend responde 401, el ApiClient intenta refrescar el token una vez y reintenta. Si vuelve a fallar, redirige a login.
+4. Si el backend responde 401, el ApiClient llama `getIdToken(forceRefresh: true)` y reintenta el request **una sola vez**.
+5. Si el reintento también falla con 401: el ApiClient llama `signOut()` de Firebase y redirige a `/auth/login`. No se muestran más diálogos ni reintentos.
+6. Si el usuario estaba en un formulario con datos no guardados: el estado del formulario se preserva en el store de Zustand de la feature. Al re-autenticarse, el usuario vuelve a la misma pantalla con los datos intactos. La feature es responsable de implementar esta preservación si aplica.
 
 ### Inicialización Firebase (web)
 
@@ -159,7 +161,48 @@ export const auth = getAuth(app);
 
 ---
 
-## 7. Variables de entorno — web (Vercel)
+## 7. Manejo de errores — cliente web
+
+### Principio
+
+Los errores del backend llegan en formato RFC 7807 (ver `ARCHITECTURE_BACKEND.md` sección 6). El cliente los consume pero **nunca muestra mensajes técnicos de infraestructura al usuario**.
+
+### Dónde vive cada responsabilidad
+
+| Capa | Responsabilidad |
+|---|---|
+| `ApiClient` (`lib/api/client.ts`) | Parsea la respuesta de error HTTP. Transforma `ErrorResponse` en un error tipado (`ApiError`). Lanza el error para que lo capturen las capas superiores. |
+| Hook / TanStack Query | Captura el error en el callback `onError`. Lo pasa al estado de la feature para que el componente lo muestre. |
+| Componente de feature | Muestra mensajes de error al usuario. Solo muestra `error.title` o `error.detail` del RFC 7807, nunca el stack trace ni el `type` interno. |
+| `ErrorBoundary` global | Captura errores de render no esperados. Muestra una pantalla de fallback genérica. **No** captura errores de red (esos los manejan los hooks). |
+
+### Tipo `ApiError`
+
+```typescript
+// lib/api/errors.ts
+export type ApiError = {
+  type: string;       // código estable para lógica de cliente (ej: 'user/not-found')
+  title: string;      // mensaje legible — este se muestra al usuario
+  status: number;     // HTTP status code
+  detail: string;     // detalle adicional — se muestra si es útil para el usuario
+  traceId: string;    // se incluye en reportes de error y logs del cliente
+};
+
+export function isApiError(err: unknown): err is ApiError {
+  return typeof err === 'object' && err !== null && 'type' in err && 'traceId' in err;
+}
+```
+
+### Reglas de manejo de errores
+
+- Nunca hacer `catch (e) { console.error(e) }` en silencio en features. Siempre propagar al estado.
+- Los errores de validación (422 con `fieldErrors`) se mapean a los campos del formulario correspondiente. TanStack Query + react-hook-form facilita este patrón.
+- Los errores 5xx muestran un mensaje genérico ("Algo salió mal, intenta de nuevo") con el `traceId` visible para que el usuario pueda reportarlo.
+- El `ErrorBoundary` global vive en el root layout (`app/layout.tsx`). Cada sección de dashboard puede tener su propio `ErrorBoundary` para contener errores de render sin romper toda la app.
+
+---
+
+## 9. Variables de entorno — web (Vercel)
 
 ### Distinción importante
 
@@ -182,7 +225,7 @@ export const auth = getAuth(app);
 
 ---
 
-## 8. Theme architecture — web
+## 10. Theme architecture — web
 
 ### Jerarquía de tokens
 
@@ -233,7 +276,32 @@ theme/
 
 ---
 
-## 9. Instrucciones para agentes — crear nueva feature web
+## 11. Testing strategy — web
+
+### Postura
+
+**No se mockea el ApiClient en tests de features.** El ApiClient se intercepta a nivel de red con `msw` (Mock Service Worker). Esto garantiza que el código de producción del ApiClient, los headers de auth y el manejo de errores se ejercitan en los tests.
+
+### Capas y herramientas
+
+| Qué testear | Herramienta | Tipo |
+|---|---|---|
+| Componentes y hooks de features | Vitest + React Testing Library + msw | Integración |
+| Lógica de estado (Zustand stores) | Vitest | Unitario |
+| Funciones utilitarias puras (`lib/utils/`) | Vitest | Unitario |
+| Flujos críticos end-to-end (login, flujo principal) | Playwright | E2E |
+
+### Reglas de testing
+
+- Los tests de features usan `msw` para interceptar requests HTTP. Nunca se mockea `fetch` ni el ApiClient directamente.
+- Los tests de componentes prueban comportamiento visible para el usuario (texto, interacciones), no implementación interna.
+- No se testea TanStack Query ni Zustand por sí solos — se testea el comportamiento de la feature que los usa.
+- Los tests E2E con Playwright cubren solo los flujos críticos del negocio: login, el happy path principal del producto, y el flujo de subida de archivo si aplica.
+- Los tests viven junto a su código: `features/auth/hooks/__tests__/useAuth.test.ts`.
+
+---
+
+## 12. Instrucciones para agentes — crear nueva feature web
 
 1. Crea `src/features/[nombre]/` con: `components/`, `hooks/`, `store/`, `api/`, `types.ts`.
 2. Define los tipos en `types.ts`.
@@ -245,20 +313,23 @@ theme/
 
 ---
 
-## 10. Instrucciones para agentes — proyecto nuevo (web)
+## 13. Instrucciones para agentes — proyecto nuevo (web)
 
 1. Crea la estructura de carpetas exacta definida en la sección 3.
 2. Instala dependencias base: Next.js 14+, TypeScript, Tailwind CSS, Zustand, TanStack Query, firebase.
-3. Crea el `ApiClient` base en `lib/api/client.ts` con los interceptores de auth y trace.
-4. Inicializa Firebase client SDK en `lib/auth/firebase.ts`.
-5. Crea la estructura de tema base en `theme/` con los semantic tokens mínimos de la sección 8.
-6. Configura `tailwind.config.ts` para consumir las CSS custom properties del tema.
-7. Crea `.env.example` con todas las variables de la sección 7 con valores vacíos.
-8. Verifica que ningún componente base tiene colores o valores hardcodeados.
+3. Instala dependencias de testing: Vitest, React Testing Library, msw, Playwright.
+4. Crea el `ApiClient` base en `lib/api/client.ts` con los interceptores de auth, trace y manejo de errores tipado.
+5. Crea el tipo `ApiError` en `lib/api/errors.ts` y la función `isApiError`.
+6. Configura el `ErrorBoundary` global en `app/layout.tsx`.
+7. Inicializa Firebase client SDK en `lib/auth/firebase.ts`.
+8. Crea la estructura de tema base en `theme/` con los semantic tokens mínimos de la sección 10.
+9. Configura `tailwind.config.ts` para consumir las CSS custom properties del tema.
+10. Crea `.env.example` con todas las variables de la sección 9 con valores vacíos.
+11. Verifica que ningún componente base tiene colores o valores hardcodeados.
 
 ---
 
-## 11. Checklist de proyecto nuevo — web
+## 14. Checklist de proyecto nuevo — web
 
 ### Estructura
 - [ ] Estructura exacta de carpetas creada
@@ -284,13 +355,26 @@ theme/
 - [ ] `tailwind.config.ts` configurado para consumir las variables
 - [ ] Verificado que ningún componente base tiene colores hardcodeados
 
+### Manejo de errores
+- [ ] `ApiError` type definido en `lib/api/errors.ts`
+- [ ] ApiClient parsea errores RFC 7807 y lanza `ApiError`
+- [ ] Manejo de 401 (force refresh + retry + logout) implementado en ApiClient
+- [ ] `ErrorBoundary` global configurado en root layout
+- [ ] Errores 5xx muestran mensaje genérico con traceId visible
+
+### Testing
+- [ ] Vitest configurado
+- [ ] msw configurado con handlers base
+- [ ] Playwright configurado con al menos un test E2E del flujo de login
+
 ### Validación final
 - [ ] Build pasa sin errores (`next build`)
 - [ ] TypeScript sin errores (`tsc --noEmit`)
+- [ ] Tests pasan (`vitest run`)
 - [ ] Flujo de auth funciona end-to-end
 - [ ] Modo oscuro funciona correctamente
 
 ---
 
-*Versión: 1.0 — Marzo 2026*
-*Derivado de ARCHITECTURE.md v2.1. Lee ese documento primero para el contexto del sistema completo.*
+*Versión: 1.1 — Marzo 2026*
+*Derivado de ARCHITECTURE.md v3.0. Lee ese documento primero para el contexto del sistema completo.*

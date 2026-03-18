@@ -192,7 +192,90 @@ await Firebase.initializeApp(
 
 ---
 
-## 8. Estado — Riverpod
+## 8. Manejo de errores — cliente mobile
+
+### Principio
+
+Los errores del backend llegan en formato RFC 7807 (ver `ARCHITECTURE_BACKEND.md` sección 6). El ApiClient los parsea en una clase sellada `AppError`. Los controllers los propagan al estado. Las screens los muestran.
+
+### Tipo `AppError` (sealed class)
+
+```dart
+// core/errors/app_error.dart
+sealed class AppError {
+  const AppError();
+}
+
+// Error de dominio del backend: 4xx con código estable
+class DomainError extends AppError {
+  final String type;    // código estable: 'user/not-found'
+  final String title;   // se muestra al usuario
+  final int status;
+  final String detail;
+  final String traceId;
+  final List<FieldError> fieldErrors; // solo en 422
+  const DomainError({...});
+}
+
+// Error de red o infraestructura: 5xx, timeout, sin conexión
+class NetworkError extends AppError {
+  final String? traceId; // puede no existir si no hubo respuesta
+  final bool isOffline;
+  const NetworkError({this.traceId, this.isOffline = false});
+}
+
+// Error no esperado: para bugs, no para mostrar al usuario
+class UnknownError extends AppError {
+  final Object cause;
+  const UnknownError(this.cause);
+}
+```
+
+### Reglas de manejo de errores
+
+- El ApiClient captura todas las `DioException` y las convierte en `AppError`. Las screens nunca ven `DioException` ni `Exception` crudos.
+- Los controllers propagan `AppError` en el estado (nunca hacen `catch` silencioso).
+- Las screens muestran solo `error.title` o `error.detail` del `DomainError`. Nunca el `type` ni el stack trace.
+- Los errores `NetworkError` con `isOffline: true` muestran un banner/snackbar de "Sin conexión". Ver sección 9.
+- Los errores 5xx muestran un mensaje genérico con el `traceId` visible para que el usuario pueda reportarlo.
+- Los errores de validación (422 con `fieldErrors`) se mapean a los campos del formulario correspondiente.
+
+---
+
+## 9. Offline y conectividad
+
+### Postura: online-first, sin persistencia local por defecto
+
+La app es **online-first**. No hay caché local persistente ni sincronización offline en v1. La postura debe declararse explícitamente para que no se añada sin criterio.
+
+**Lo que SÍ se hace:**
+- Detectar estado de red con `connectivity_plus`.
+- Mostrar un banner de "Sin conexión" cuando no hay red, antes de intentar llamadas HTTP.
+- Deshabilitar acciones que requieren red cuando está offline (botones de guardar, enviar).
+
+**Lo que NO se hace en v1:**
+- Persistencia local con Hive, sqflite, Drift, Isar ni ningún otro.
+- Cola de operaciones offline para sincronizar cuando vuelva la conexión.
+- Caché de datos para lectura offline.
+
+Si un proyecto necesita soporte offline real, debe documentarlo explícitamente en un ADR antes de añadir cualquier dependencia de persistencia local.
+
+### Optimistic updates
+
+**No se usan optimistic updates por defecto.** Son complejos de revertir correctamente y crean inconsistencias si el backend falla.
+
+La excepción permitida es para acciones de UI de baja consecuencia donde el fallo es extremadamente raro (ej: marcar un ítem como favorito). En ese caso:
+
+1. Actualiza el estado local inmediatamente.
+2. Llama al backend.
+3. Si falla: revierte el estado local y muestra un snackbar de error.
+4. El caso de revert debe estar implementado antes de activar el optimistic update.
+
+Si no se implementa el revert, no se hace optimistic update.
+
+---
+
+## 10. Estado — Riverpod
 
 ### Patrones establecidos
 
@@ -232,7 +315,7 @@ class AuthController extends StateNotifier<AuthState> {
 
 ---
 
-## 9. Navegación — GoRouter
+## 11. Navegación — GoRouter
 
 ### Estructura
 
@@ -259,7 +342,7 @@ redirect: (context, state) {
 
 ---
 
-## 10. Theme architecture — Flutter
+## 12. Theme architecture — Flutter
 
 ### Jerarquía de tokens
 
@@ -316,7 +399,7 @@ Container(color: Color(0xFFFFFFFF))
 
 ---
 
-## 11. Variables de entorno — mobile (dart-define)
+## 13. Variables de entorno — mobile (dart-define)
 
 ### Regla fundamental
 
@@ -355,7 +438,33 @@ class AppConfig {
 
 ---
 
-## 12. Instrucciones para agentes — crear nueva feature Flutter
+## 14. Testing strategy — mobile
+
+### Postura
+
+El testing en Flutter sigue tres niveles nativos del framework. No se mockean las implementaciones de repositorios concretos en tests de use cases — se usan implementaciones fake que implementan el mismo contrato abstracto.
+
+### Capas y herramientas
+
+| Qué testear | Herramienta | Tipo |
+|---|---|---|
+| Use cases y lógica de dominio | `flutter_test` | Unitario |
+| Controllers (StateNotifier) con repositorios fake | `flutter_test` + `mocktail` | Unitario |
+| Widgets de features y flujos de pantalla | `flutter_test` (widget tests) | Integración |
+| Flujos críticos end-to-end | `integration_test` + `patrol` | E2E |
+
+### Reglas de testing
+
+- Los tests de use cases usan implementaciones `Fake` del repositorio abstracto (clase que extiende el abstract), no mocks de Mockito/mocktail. Esto garantiza que la implementación fake implementa el mismo contrato.
+- Los tests de controllers usan `mocktail` para los use cases. Son tests unitarios rápidos.
+- Los tests de widget prueban el flujo visible: estados de loading, data y error de cada pantalla.
+- Los tests E2E con `patrol` cubren solo los flujos críticos: login, el happy path principal, y el flujo de cámara/archivos si aplica.
+- Los tests viven junto a su código: `features/auth/domain/usecases/login_usecase_test.dart`.
+- Nunca se mockea el `ApiClient` de Dio directamente. Si un test necesita simular HTTP, usa un repositorio fake.
+
+---
+
+## 15. Instrucciones para agentes — crear nueva feature Flutter
 
 1. Crea `lib/features/[nombre]/` con: `data/`, `domain/`, `presentation/`.
 2. En `domain/`: crea la entidad, el abstract del repositorio y los use cases.
@@ -366,20 +475,23 @@ class AppConfig {
 
 ---
 
-## 13. Instrucciones para agentes — proyecto nuevo (mobile)
+## 16. Instrucciones para agentes — proyecto nuevo (mobile)
 
 1. Crea la estructura de carpetas exacta definida en la sección 4.
-2. Instala dependencias base: flutter, riverpod, dio, go_router, firebase_core, firebase_auth, freezed, json_serializable.
-3. Crea el `ApiClient` base en `core/network/` con los interceptores de auth y trace.
-4. Inicializa Firebase en `app/bootstrap/app_bootstrap.dart`.
-5. Implementa el `AuthService` en `core/auth/` con `authStateChanges()`.
-6. Configura GoRouter en `app/router/app_router.dart` con el guard de auth.
-7. Crea la estructura de tema base en `theme/` con los semantic tokens mínimos de la sección 10.
-8. Verifica que ningún componente base tiene colores o valores hardcodeados.
+2. Instala dependencias base: flutter, riverpod, dio, go_router, firebase_core, firebase_auth, freezed, json_serializable, connectivity_plus.
+3. Instala dependencias de testing: flutter_test (incluido), mocktail, integration_test, patrol.
+4. Crea el `ApiClient` base en `core/network/` con los interceptores de auth, trace y parseo de errores a `AppError`.
+5. Crea la `sealed class AppError` en `core/errors/app_error.dart`.
+6. Inicializa Firebase en `app/bootstrap/app_bootstrap.dart`.
+7. Implementa el `AuthService` en `core/auth/` con `authStateChanges()`.
+8. Configura el `ConnectivityService` en `core/network/` para detectar estado de red.
+9. Configura GoRouter en `app/router/app_router.dart` con el guard de auth.
+10. Crea la estructura de tema base en `theme/` con los semantic tokens mínimos de la sección 12.
+11. Verifica que ningún componente base tiene colores o valores hardcodeados.
 
 ---
 
-## 14. Checklist de proyecto nuevo — mobile
+## 17. Checklist de proyecto nuevo — mobile
 
 ### Estructura
 - [ ] Estructura exacta de carpetas creada
@@ -409,14 +521,28 @@ class AppConfig {
 - [ ] `ThemeData` light y dark configurados en `app_theme.dart`
 - [ ] Verificado que ningún widget base usa `Colors.X` o literales
 
+### Manejo de errores
+- [ ] `sealed class AppError` creada en `core/errors/`
+- [ ] ApiClient parsea DioException a AppError
+- [ ] Manejo de 401 (force refresh + retry + logout) implementado
+- [ ] Banner de "Sin conexión" implementado con connectivity_plus
+- [ ] Errores 5xx muestran mensaje genérico con traceId visible
+
+### Testing
+- [ ] mocktail y patrol instalados
+- [ ] Al menos un test unitario de use case con repositorio fake
+- [ ] Al menos un test de widget del flujo de login
+- [ ] integration_test configurado
+
 ### Validación final
 - [ ] Build iOS pasa sin errores (`flutter build ios`)
 - [ ] Build Android pasa sin errores (`flutter build appbundle`)
 - [ ] Análisis estático sin errores (`flutter analyze`)
+- [ ] Tests pasan (`flutter test`)
 - [ ] Flujo de auth funciona end-to-end
 - [ ] Modo oscuro funciona correctamente
 
 ---
 
-*Versión: 1.0 — Marzo 2026*
-*Derivado de ARCHITECTURE.md v2.1. Lee ese documento primero para el contexto del sistema completo.*
+*Versión: 1.1 — Marzo 2026*
+*Derivado de ARCHITECTURE.md v3.0. Lee ese documento primero para el contexto del sistema completo.*

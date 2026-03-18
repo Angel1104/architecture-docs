@@ -523,7 +523,163 @@ graph LR
 
 ---
 
-## 13. Instrucciones para agentes — crear nuevo módulo backend
+## 13. Versionado de API
+
+### Estrategia fijada: versionado por URL
+
+Todos los endpoints públicos van bajo `/v1/`. El prefijo vive en el controller NestJS como `@Controller('v1/[módulo]')`.
+
+### Cuándo crear `/v2/`
+
+**No se crea `/v2/` por preferencia de diseño ni por refactorings internos.** Solo se crea cuando hay un breaking change real que afecta a clientes en producción y no se puede evitar.
+
+Un breaking change es:
+- Eliminar un campo de la respuesta que los clientes usan.
+- Cambiar el tipo de un campo existente.
+- Cambiar la semántica de un parámetro (mismo nombre, diferente comportamiento).
+- Cambiar la estructura del body de un request requerido.
+
+**No es un breaking change:**
+- Añadir campos nuevos opcionales a la respuesta.
+- Añadir parámetros opcionales a un endpoint.
+- Añadir endpoints nuevos.
+- Cambios internos de implementación (base de datos, servicios).
+
+### Proceso para introducir `/v2/`
+
+1. Crea el nuevo endpoint bajo `/v2/` en el mismo módulo.
+2. Mantén `/v1/` funcionando durante el período de migración. No lo elimines en el mismo deploy.
+3. Comunica el deprecation a los clientes con el header `Deprecation: true` y `Sunset: [fecha]`.
+4. Elimina `/v1/` solo cuando todos los clientes hayan migrado.
+
+### Regla para agentes
+
+Si estás scaffoldeando un módulo nuevo, siempre usa `/v1/`. Nunca crees un módulo directamente en `/v2/` a menos que el documento de spec lo indique explícitamente.
+
+---
+
+## 14. Paginación
+
+### Estrategia fijada: cursor-based
+
+**No se usa offset/page number.** La paginación por cursor es consistente con inserciones concurrentes y no tiene el problema de "registro saltado" del offset.
+
+### Contrato de respuesta paginada
+
+```typescript
+// shared/interface/pagination.types.ts
+export type PaginatedResponse<T> = {
+  data: T[];
+  nextCursor: string | null;  // null = no hay más páginas
+  hasMore: boolean;
+};
+
+export type PaginationParams = {
+  cursor?: string;  // ausente = primera página
+  limit?: number;   // default: 20, max: 100
+};
+```
+
+### Implementación en el repositorio
+
+```typescript
+// En el repositorio Prisma, la query siempre incluye:
+const items = await prisma.item.findMany({
+  where: { tenantId, ...(cursor ? { id: { gt: cursor } } : {}) },
+  orderBy: { createdAt: 'asc' },  // orden estable requerido para cursor
+  take: limit + 1,  // toma uno extra para saber si hay más
+});
+
+const hasMore = items.length > limit;
+const data = hasMore ? items.slice(0, -1) : items;
+const nextCursor = hasMore ? data[data.length - 1].id : null;
+```
+
+### Reglas de paginación
+
+- Todos los endpoints de listado devuelven `PaginatedResponse<T>`. Nunca arrays planos sin paginación.
+- El `limit` máximo es 100. Si el cliente pide más, se responde con 400.
+- El orden del cursor debe ser estable: siempre ordena por un campo único + `createdAt`. Nunca por campos que pueden cambiar.
+- El cursor es opaco para el cliente: es un ID o un string encodeado. Nunca un número de página.
+
+---
+
+## 15. Side effects síncronos
+
+### Cuándo NO usar Cloud Tasks
+
+Cloud Tasks es para side effects que pueden procesarse en background y donde el cliente no necesita el resultado para continuar (procesamiento de documentos, emails, notificaciones, webhooks).
+
+**Hay casos válidos donde el side effect debe ser síncrono** dentro del request:
+
+| Caso | Estrategia |
+|---|---|
+| Verificar existencia en servicio externo antes de continuar (ej: validar IBAN en banco) | Llamada directa desde el use case via puerto de infraestructura |
+| Enviar email de verificación y necesitar confirmar que se envió | Llamada directa, el use case espera el resultado |
+| Generar un thumbnail/preview pequeño que el cliente necesita en la respuesta | Llamada directa a FastAPI vía HTTP interno (no Cloud Tasks) |
+| Registrar un evento de auditoría que debe ser parte de la transacción | Escritura en DB dentro de la misma transacción Prisma |
+
+### Llamada síncrona a FastAPI
+
+Cuando NestJS necesita resultado síncrono de FastAPI, la llamada va directamente vía HTTP interno (no Cloud Tasks). FastAPI tiene endpoints `/internal/sync/[operacion]` para estos casos además de los endpoints de tasks async.
+
+```mermaid
+sequenceDiagram
+    participant UC as NestJS Use Case
+    participant FA as FastAPI
+    participant DB as Neon
+
+    UC->>FA: POST /internal/sync/generate-thumbnail (OIDC)
+    FA->>FA: Genera thumbnail
+    FA-->>UC: { thumbnailUrl }
+    UC->>DB: Guarda resultado con thumbnail
+    UC-->>Client: Respuesta con thumbnail incluido
+```
+
+### Reglas para side effects síncronos
+
+- Si la operación síncrona falla y la operación principal no puede continuar sin ella: lanza un `DomainError` con 422 o 424 según aplique.
+- Si la operación síncrona falla pero la operación principal sí puede continuar: loggea el error como `warn`, continúa, y encola un retry vía Cloud Tasks.
+- Nunca bloquear el request más de 10 segundos en una llamada síncrona a servicio externo. Si el servicio externo es lento, rediseñar como async.
+- Los endpoints `/internal/sync/` de FastAPI también se protegen con OIDC token de GCP.
+
+---
+
+## 16. Testing strategy — backend
+
+### Postura
+
+**No se mockea la base de datos en tests de repositorios.** Los tests de repositorios usan una base de datos real (Neon en staging, o Postgres local via Docker en desarrollo). Esto previene que divergencias entre el mock y Prisma oculten bugs.
+
+### Capas y herramientas
+
+| Qué testear | Herramienta | Tipo |
+|---|---|---|
+| Use cases (lógica de dominio) | Jest + repositorios fake (implement los puertos) | Unitario |
+| Controllers (HTTP layer) | Jest + Supertest + NestJS testing module | Integración |
+| Repositorios Prisma | Jest + base de datos real (Docker Compose) | Integración |
+| Flujos E2E críticos | Jest + Supertest contra servicio levantado | E2E |
+
+### Reglas de testing
+
+- Los tests de use cases usan implementaciones `Fake` de los puertos del repositorio. No usan `jest.mock()` de Prisma.
+- Los tests de controllers usan el módulo de testing de NestJS con providers reales o fakes controlados. Se testea el contrato HTTP: status codes, estructura de respuesta, headers.
+- Los tests de repositorios requieren una base de datos real. En CI, el workflow levanta un contenedor Postgres con Docker. Cada test suite limpia sus datos al inicio con `prisma.$transaction` + `deleteMany`.
+- Nunca usar `jest.mock()` sobre servicios de infraestructura (Firebase, R2, Redis) en tests de use cases. Esos tienen sus propios ports/fakes.
+- Los tests viven junto al código que testean: `modules/auth/application/use-cases/__tests__/login.usecase.spec.ts`.
+
+### Tests de FastAPI
+
+| Qué testear | Herramienta | Tipo |
+|---|---|---|
+| Servicios de procesamiento | pytest | Unitario |
+| Endpoints (validación OIDC, contrato de respuesta) | pytest + httpx | Integración |
+
+- Los tests de FastAPI mockean el OIDC token en tests de integración usando un token de test firmado con la clave del service account de test.
+
+---
+
+## 17. Instrucciones para agentes — crear nuevo módulo backend
 
 1. Crea la carpeta bajo `src/modules/[nombre]/` con las cuatro subcarpetas: `domain/`, `application/`, `infrastructure/`, `interface/`.
 2. Define la entidad en `domain/entities/`. Extiende `BaseEntity`.
@@ -537,7 +693,7 @@ graph LR
 
 ---
 
-## 14. Instrucciones para agentes — agregar side effect async
+## 18. Instrucciones para agentes — agregar side effect async
 
 1. Define el tipo del task en `shared/infrastructure/cloud-tasks/`.
 2. Crea el handler en el módulo correspondiente como endpoint `POST /internal/tasks/[task-name]`.
@@ -547,21 +703,24 @@ graph LR
 
 ---
 
-## 15. Instrucciones para agentes — proyecto nuevo (backend)
+## 19. Instrucciones para agentes — proyecto nuevo (backend)
 
 1. Crea la estructura de carpetas exacta definida en la sección 3.
 2. Configura las dependencias base de NestJS y FastAPI.
-3. Configura Prisma con el schema mínimo: tablas `users` y `tenants` con RLS desde el inicio.
-4. Activa RLS en todas las tablas multi-tenant desde el primer schema.
-5. Configura `firebase-admin` en el shared module del backend.
-6. Implementa el Auth Guard con lazy creation de usuario en Neon (flujo de la sección 7).
-7. Configura OpenTelemetry en el backend **antes de cualquier otra lógica**.
-8. Crea el `.env.example` con todas las variables de la sección 12 con valores vacíos.
-9. Crea el `Dockerfile` para Cloud Run en backend y FastAPI.
+3. Instala dependencias de testing: Jest, Supertest, `@nestjs/testing`.
+4. Configura Prisma con el schema mínimo: tablas `users` y `tenants` con RLS desde el inicio.
+5. Activa RLS en todas las tablas multi-tenant desde el primer schema.
+6. Configura `firebase-admin` en el shared module del backend.
+7. Implementa el Auth Guard con lazy creation de usuario en Neon (flujo de la sección 7).
+8. Configura OpenTelemetry en el backend **antes de cualquier otra lógica**.
+9. Crea los tipos `PaginatedResponse<T>` y `PaginationParams` en `shared/interface/pagination.types.ts`.
+10. Crea el `.env.example` con todas las variables de la sección 12 con valores vacíos.
+11. Crea el `Dockerfile` para Cloud Run en backend y FastAPI.
+12. Configura `docker-compose.yml` con Postgres para tests de integración locales.
 
 ---
 
-## 16. Checklist de proyecto nuevo — backend
+## 20. Checklist de proyecto nuevo — backend
 
 ### Estructura
 - [ ] Estructura exacta de carpetas de NestJS creada
@@ -594,14 +753,27 @@ graph LR
 - [ ] Logging estructurado JSON configurado
 - [ ] Alertas mínimas configuradas en Cloud Monitoring
 
+### API y paginación
+- [ ] Todos los controllers usan prefijo `/v1/`
+- [ ] `PaginatedResponse<T>` y `PaginationParams` definidos en shared
+- [ ] Al menos el endpoint de listado principal usa paginación cursor-based
+
+### Testing
+- [ ] Jest configurado con cobertura
+- [ ] `docker-compose.yml` con Postgres para tests locales
+- [ ] Al menos un test unitario de use case con repositorio fake
+- [ ] Al menos un test de integración de controller con Supertest
+
 ### Validación final
 - [ ] Build de NestJS pasa sin errores
 - [ ] Build de FastAPI pasa sin errores
+- [ ] Tests pasan (`jest --runInBand`)
 - [ ] `GET /health` responde 200 correctamente
 - [ ] Flujo completo de auth funciona end-to-end: login → token → request autenticado
 - [ ] Multi-tenancy verificado: datos de un tenant no son visibles desde otro
+- [ ] Paginación verificada: cursor devuelve página siguiente correcta
 
 ---
 
-*Versión: 1.0 — Marzo 2026*
-*Derivado de ARCHITECTURE.md v2.1. Lee ese documento primero para el contexto del sistema completo.*
+*Versión: 1.1 — Marzo 2026*
+*Derivado de ARCHITECTURE.md v3.0. Lee ese documento primero para el contexto del sistema completo.*
