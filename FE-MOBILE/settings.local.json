@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "Task(*)",
+      "MCP(*)",
+      "NotebookEdit(*)",
+      "TodoWrite(*)",
+      "mcp__figma-desktop__get_design_context",
+      "mcp__figma-desktop__get_metadata",
+      "mcp__figma-desktop__get_variable_defs",
+      "mcp__figma-desktop__get_screenshot",
+      "mcp__claude_ai_Atlassian__getAccessibleAtlassianResources",
+      "mcp__claude_ai_Atlassian__getVisibleJiraProjects",
+      "mcp__claude_ai_Atlassian__createJiraIssue",
+      "mcp__claude_ai_Atlassian__getJiraIssue",
+      "mcp__claude_ai_Atlassian__editJiraIssue",
+      "mcp__claude_ai_Atlassian__updateConfluencePage",
+      "Skill(intake)",
+      "Skill(intake:*)",
+      "mcp__claude_ai_Figma__get_design_context",
+      "Bash(keytool -list -keystore /Users/angel/Downloads/my-release-key.jks -alias Shipdrive-key -storepass \"RPnU4YG%geRpgMFQ$\")",
+      "Bash(keytool -list -keystore /Users/angel/Downloads/my-release-key.jks -alias Shipdrive-key -storepass \"RPnU4YG%geRpgMFQ$\" -v)",
+      "Bash(keytool -list -keystore \"/Users/angel/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/Media/59169554387@s.whatsapp.net/8/6/865942f4-a941-4080-ad48-cf5b9a5ca420.jks\" -storepass \"RPnU4YG%geRpgMFQ$\" -v)",
+      "Bash(gh secret:*)",
+      "mcp__claude_ai_Atlassian__addCommentToJiraIssue"
+    ],
+    "deny": []
+  },
+  "disabledMcpjsonServers": [
+    "figma-desktop"
+  ]
+}

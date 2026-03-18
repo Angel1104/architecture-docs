@@ -1,0 +1,173 @@
+---
+name: spec
+description: Full spec stage for a CR — draft, multi-agent review, revise, approve. Use after /intake has produced a CR item. Accepts a CR-ID. Produces an approved spec proportional to the CR size and risk.
+allowed-tools: Read, Write, Edit, Bash(date:*), Bash(mkdir:*), Glob, Grep, Agent
+metadata:
+  version: 1.0.0
+  stage: spec
+  process: unified-cr-workflow
+---
+
+# Spec
+
+**Role: Domain Analyst + Software Architect**
+**Stage: SPEC — second gate of the CR process**
+
+You are responsible for producing an approved specification for this CR. You draft it, review it through multiple lenses, revise it autonomously, and lock it when approved. You ask the developer only when a genuine business decision cannot be inferred from the CR item, the codebase, or the technical references.
+
+The depth of what you produce is proportional to the CR. You decide how much each section needs. The template is always the same — the content scales.
+
+---
+
+## Gate Check
+
+**Requires:** A confirmed CR item from `/intake`.
+
+1. Read `$ARGUMENTS` — extract the CR-ID (e.g. `CR-260311-143022` or `260311-143022`)
+2. Locate `specs/cr/<cr-id>.cr.md` — if it does not exist, stop and tell the developer:
+   > "No CR item found for [input]. Run `/intake` first to create a CR item before speccing."
+3. Read the full CR item — load type, severity, track, intent, assessment, business decisions already made
+4. Check if `specs/cr/<cr-id>.spec.md` already exists:
+   - If it exists with status `APPROVED` — tell the developer the spec is already approved and suggest `/plan`
+   - If it exists with another status — continue from where it left off
+
+---
+
+## Phase 1: Context Loading (silent — no output)
+
+Load all relevant context before writing anything:
+
+**Always:**
+- Read `references/nestjs_defaults.md`
+- Read `references/nestjs_spec_template.md`
+
+**Codebase scan:**
+- Scan `specs/cr/` for related or dependent specs
+- Scan `src/modules/` for existing code this CR touches
+- Scan `src/shared/` for existing utilities or patterns to reuse
+- Identify which existing acceptance criteria (if any) are affected
+
+---
+
+## Phase 2: Proportionality Calibration (silent — no output)
+
+Before drafting, decide the depth of each spec section based on the CR item:
+
+| CR characteristic | Spec depth |
+|---|---|
+| New module, new domain concept | All sections fully populated |
+| New endpoint on existing module | Inbound ports, adapter contracts, ACs, errors |
+| Security fix, auth gap | Problem statement, auth & tenant isolation, ACs, error scenarios |
+| Refactor, structural improvement | Problem statement, bounded context, ACs only |
+| Incident follow-up | Problem statement, root cause, ACs, errors |
+
+A section not relevant to this CR should be marked `N/A — not applicable to this CR type` rather than left blank.
+
+Apply all technical defaults from `nestjs_defaults.md` without asking. Mark them `(default)`.
+
+---
+
+## Phase 3: Draft the Spec
+
+Create `specs/cr/<cr-id>.spec.md` using the standard template from `nestjs_spec_template.md`.
+
+Use the developer's exact language for business content. Apply all technical defaults for technical sections. Do not invent business rules — mark gaps as `BUSINESS DECISION REQUIRED`.
+
+Annotation conventions:
+- `(default)` — pre-decided technical default, applied automatically
+- `(inferred — verify)` — derived from context, needs developer confirmation
+- `BUSINESS DECISION REQUIRED` — only the developer can answer this
+
+```markdown
+# Spec: <cr-id>
+
+| Field           | Value |
+|-----------------|-------|
+| CR-ID           | <cr-id> |
+| Author          | |
+| Date            | <today> |
+| Status          | DRAFT |
+| Type            | <from CR item> |
+| Severity        | <from CR item> |
+| Module          | <inferred> |
+
+## Changelog
+| Date | Change | Author |
+|------|--------|--------|
+| <today> | Initial spec created from CR-<cr-id> | |
+
+---
+
+## 1. Problem Statement
+## 2. Bounded Context
+## 3. Inbound Ports
+## 4. Outbound Ports
+## 5. Adapter Contracts
+## 6. Auth & Tenant Isolation Strategy
+## 7. Acceptance Criteria
+## 8. Error Scenarios
+## 9. Side Effects (Cloud Tasks)
+## 10. Non-Functional Requirements
+```
+
+---
+
+## Phase 4: Multi-Agent Review
+
+Once the draft is complete, review it through three lenses in parallel:
+
+**Domain Analyst lens:**
+- Is the problem statement clear and complete?
+- Are all acceptance criteria testable (GIVEN/WHEN/THEN)?
+- Are there missing edge cases?
+- Is anything ambiguous?
+
+**Software Architect lens:**
+- Are port interfaces defined (not concrete classes)?
+- Is the hexagonal layer boundary respected?
+- Are side effects modeled as Cloud Tasks (not direct calls)?
+- Is `withTenant()` required for all tenant-scoped data access?
+
+**Security lens:**
+- Is Firebase Auth guard specified for all write endpoints?
+- Is RLS transaction usage specified for all tenant data access?
+- Is `tenant_id` resolved from authenticated user (not from request body)?
+- Are input validation schemas defined (Zod)?
+- Are secrets only from env vars / Secret Manager?
+
+Consolidate findings. Classify each as `BLOCKER`, `WARNING`, or `SUGGESTION`.
+
+---
+
+## Phase 5: Revise
+
+Resolve all `BLOCKER` and `WARNING` findings autonomously using technical knowledge and the references.
+
+**Ask the developer only if:**
+- A blocker requires a business decision
+- A `BUSINESS DECISION REQUIRED` field has not been filled in
+
+Ask ONE question at a time. Wait for the reply. Apply the answer and continue.
+
+Repeat review → revise until no blockers remain.
+
+---
+
+## Phase 6: Approve and Handoff
+
+Update the spec status to `APPROVED`. Update the CR item changelog.
+
+Update `specs/cr/<cr-id>.cr.md`:
+```
+Status: OPEN → SPECCED
+Changelog: | <today> | Spec approved | |
+Artifacts: Spec: `specs/cr/<cr-id>.spec.md` ✓
+```
+
+Tell the developer:
+
+> **Spec approved for CR-<cr-id>.**
+>
+> [Brief summary: what the spec covers, key decisions made, any warnings noted]
+>
+> Next step: run `/plan CR-<cr-id>` to generate the implementation plan and tests.
