@@ -172,13 +172,16 @@ class TaskRepositoryImpl implements ITaskRepository {
 }
 ```
 
-### Auth Interceptor (Firebase token — no manual storage)
+### Auth Interceptor (via AuthService — no direct SDK calls)
 ```dart
 // core/network/interceptors/auth_interceptor.dart
 class AuthInterceptor extends Interceptor {
+  final AuthService _authService;
+  AuthInterceptor(this._authService);
+
   @override
   Future<void> onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
-    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    final token = await _authService.getToken();
     if (token != null) {
       options.headers['Authorization'] = 'Bearer $token';
     }
@@ -189,7 +192,7 @@ class AuthInterceptor extends Interceptor {
   Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
     if (err.response?.statusCode == 401) {
       try {
-        final token = await FirebaseAuth.instance.currentUser?.getIdToken(true);
+        final token = await _authService.refreshToken();
         if (token != null) {
           err.requestOptions.headers['Authorization'] = 'Bearer $token';
           final response = await Dio().fetch(err.requestOptions);
@@ -197,8 +200,8 @@ class AuthInterceptor extends Interceptor {
           return;
         }
       } catch (_) {}
-      // Refresh failed — emit logout
-      await FirebaseAuth.instance.signOut();
+      // Refresh failed — logout via AuthService
+      await _authService.logout();
     }
     handler.next(err);
   }
@@ -216,8 +219,8 @@ class AuthInterceptor extends Interceptor {
 | `json_serializable` + `build_runner` | JSON serialization |
 | `dio` | HTTP client |
 | `go_router` | Navigation with auth guard |
-| `firebase_core` + `firebase_auth` | Firebase auth |
-| `firebase_messaging` | Push notifications |
+| Auth provider SDK | Chosen per project — implements `AuthService` (e.g., `firebase_auth`, `auth0_flutter`) |
+| Push notifications SDK | Chosen per project (e.g., `firebase_messaging` for FCM) |
 | `connectivity_plus` | Offline detection |
 | `permission_handler` | Runtime permissions |
 | `mocktail` | Controller unit tests |
@@ -282,9 +285,9 @@ test('list returns only tasks belonging to the authenticated user', () async {
 
 ## Non-Negotiables
 
-1. **Domain layer imports only pure Dart** — no Flutter SDK, no Dio, no Firebase
+1. **Domain layer imports only pure Dart** — no Flutter SDK, no Dio, no auth SDK
 2. **User context comes from JWT** — never hardcoded, never from a UI field
-3. **Firebase manages tokens** — never extract, store, or refresh tokens manually; use `getIdToken()`
+3. **AuthService manages tokens** — never extract, store, or refresh tokens directly; always go through `AuthService.getToken()` / `AuthService.refreshToken()`
 4. **All errors are `AppError`** — no raw `DioException` or `Exception` crossing the data layer boundary
 5. **State is immutable** — all entities and state classes use `freezed`
 6. **Navigation state is not business state** — GoRouter for navigation, Riverpod for business state

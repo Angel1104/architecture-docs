@@ -50,7 +50,7 @@ These are HARD blockers. Code violating any of these must not proceed.
 1. **No implementation without a spec.** The `enforce-spec-first.js` hook blocks writes to `lib/features/` if no reviewed spec exists.
 2. **No Flutter/Dio/Firebase imports in domain.** Any external package import in `lib/features/<f>/domain/` is a boundary violation.
 3. **No data access without userId.** Every repository method that returns user data must be scoped to `userId`. No exceptions.
-4. **No tokens stored manually.** Firebase manages tokens internally — never extract and store them in SharedPreferences, Hive, or any manual store.
+4. **No tokens stored manually.** Tokens are managed by the `AuthService` implementation — never extract and store them in SharedPreferences, Hive, or any manual store.
 5. **No secrets in code.** API keys and credentials must come from `--dart-define` build-time constants or `AppConfig`. Never hardcoded.
 6. **No business logic in presentation.** Widgets consume Riverpod state and fire controller methods. No `if` statements on business rules in widget `build()` methods.
 7. **No unguarded routes.** Every route that displays user-specific data must have an auth guard in GoRouter. The guard must respect the `initializing` state.
@@ -139,8 +139,8 @@ All reference files are in `references/`:
 ## Stack
 
 - **Mobile**: Flutter / Dart
-- **Auth**: Firebase Authentication (JWT with custom claims)
-- **Backend**: NestJS on Cloud Run (API calls via Dio — backend enforces RLS)
+- **Auth**: Provider-agnostic — `AuthService` abstraction in `core/auth/`. Concrete implementation chosen per project (Firebase, Auth0, custom JWT, etc.)
+- **Backend**: Any REST backend reachable via Dio — contract: Bearer token, RFC 7807 errors, X-Trace-ID, cursor pagination
 - **Architecture**: Clean Architecture + Riverpod
 - **User isolation**: `userId` from JWT scopes all data access; backend enforces RLS
 
@@ -153,8 +153,8 @@ All reference files are in `references/`:
 | `json_serializable` + `build_runner` | JSON serialization for API models |
 | `dio` | HTTP client |
 | `go_router` | Navigation with auth guard (respects `initializing` state) |
-| `firebase_core` + `firebase_auth` | Firebase initialization + client-side auth |
-| `firebase_messaging` | Push notifications |
+| Auth provider SDK | Chosen per project — implements `AuthService` (e.g., `firebase_auth`, `auth0_flutter`) |
+| Push notifications SDK | Chosen per project (e.g., `firebase_messaging` if using FCM) |
 | `connectivity_plus` | Offline detection |
 | `permission_handler` | Runtime permissions (just-in-time) |
 | `cached_network_image` | Network image caching |

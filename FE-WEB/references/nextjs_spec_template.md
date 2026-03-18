@@ -152,9 +152,9 @@ function toName(r: NameResponse): Name { ... }
 ### 6. Auth Perspective
 
 - **Route protection**: describe which middleware or layout guard is used
-- **Token**: Firebase client SDK — `getIdToken()` called by `ApiClient` automatically
-- **Firebase SDK location**: only in `'use client'` components or `src/core/auth/`
-- **401 handling**: `ApiClient` retries with `forceRefresh: true` once, then `signOut()` + redirect
+- **Token**: `AuthService.getToken()` called by `ApiClient` automatically — auth provider SDK is isolated in `src/core/auth/`
+- **Auth SDK location**: only in `'use client'` components or `src/core/auth/` — never imported directly in feature code
+- **401 handling**: `ApiClient` calls `AuthService.refreshToken()` once, then `AuthService.logout()` + redirect
 - **Form state on 401**: [describe if any form should preserve state in Zustand during re-auth]
 - **Role-based UI**: [describe which UI elements are hidden/shown based on role, if any]
 

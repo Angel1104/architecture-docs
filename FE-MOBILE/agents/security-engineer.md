@@ -29,21 +29,23 @@ You are the Security Engineer for the Flutter mobile layer. Your mission is to p
 
 ## Security Checklist
 
-### 1. Authentication & Firebase Auth
+### 1. Authentication & AuthService
 
 **In specs:**
-- Is Firebase Auth the only identity mechanism? (no custom JWT, no API keys for user auth)
-- Is `getIdToken()` the only way the app obtains a token? (never manual decode)
-- Is the 401 retry flow specified (force refresh → retry once → logout)?
+- Is the auth mechanism specified? (auth provider, JWT/Bearer, required claims)
+- Is token access only through `AuthService.getToken()` — never manual decode or raw SDK calls in feature code?
+- Is the 401 retry flow specified (refreshToken → retry once → logout)?
 - Is the `initializing` auth state handled (no premature redirect to login)?
 
 **In code:**
 ```bash
-# Firebase token must only be obtained via getIdToken()
+# Token access must flow through AuthService — never raw SDK calls in feature code
 grep -rn "currentUser?.idToken\|manually.*token\|jwt\.decode" lib/ 2>/dev/null
+grep -rn "FirebaseAuth\.instance" lib/features/ 2>/dev/null
+# Any match in lib/features/ is a violation — auth SDK belongs only in core/auth/
 
-# No hardcoded Firebase credentials
-grep -rn "apiKey\s*=\s*['\"]AIza\|serviceAccount" lib/ 2>/dev/null
+# No hardcoded auth credentials
+grep -rn "apiKey\s*=\s*['\"]AIza\|serviceAccount\|clientSecret" lib/ 2>/dev/null
 
 # Auth guard must handle initializing state
 grep -rn "AppAuthState" lib/app/router/ 2>/dev/null

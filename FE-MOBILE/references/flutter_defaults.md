@@ -45,32 +45,63 @@ core/            → external packages only (never imports features)
 
 ---
 
-## 2. Auth — Firebase Client SDK
+## 2. Auth — Provider-Agnostic Design
 
 | Decision | Default |
 |----------|---------|
-| SDK | `firebase_auth` — client-side identity only |
 | Auth state | `AppAuthState` enum: `initializing`, `authenticated`, `unauthenticated` |
-| Token injection | Dio auth interceptor: `Authorization: Bearer <token>` via `getIdToken()` |
-| Token refresh | On 401: `getIdToken(forceRefresh: true)` + retry once. On second failure: emit logout. |
-| Logout | `FirebaseAuth.instance.signOut()` + navigate to login |
-| Token storage | Firebase manages tokens internally — never extract or store manually |
-| Tenant context | JWT claims — read server-side by NestJS. Mobile never decodes claims for authorization. |
+| Token injection | Dio auth interceptor: `Authorization: Bearer <token>` via `AuthService.getToken()` |
+| Token refresh | On 401: `AuthService.refreshToken()` + retry once. On second failure: emit logout. |
+| Logout | `AuthService.logout()` + navigate to login |
+| Token storage | Managed by the auth provider SDK — never extract or store tokens manually |
+| Auth SDK placement | Only imported in `data/` and `core/` layers — never in `domain/` |
 
-### Three-state auth (mandatory)
+### The contract — what the FE always needs
+
+```dart
+// core/auth/auth_service.dart
+abstract class AuthService {
+  AppAuthState get state;
+  Stream<AppAuthState> get stateChanges;
+
+  Future<String?> getToken();          // Bearer token for ApiClient
+  Future<String?> refreshToken();      // Force-refresh on 401
+  Future<void> logout();               // Clear session + navigate to login
+}
+```
+
+### Three-state auth (mandatory — regardless of provider)
 
 ```dart
 // core/auth/auth_state.dart
 enum AppAuthState {
-  initializing,    // Firebase has not yet emitted the first value
+  initializing,    // Auth SDK has not yet emitted the first value
   authenticated,   // User is signed in
   unauthenticated  // User is signed out (we know with certainty)
 }
 ```
 
-The `initializing` state prevents the GoRouter guard from flashing `/auth/login` before Firebase is ready.
+The `initializing` state prevents the GoRouter guard from flashing `/auth/login` before the auth SDK is ready.
 
-### GoRouter guard pattern
+### Firebase implementation example
+
+```dart
+// core/auth/providers/firebase_auth_service.dart
+class FirebaseAuthService implements AuthService {
+  @override
+  Future<String?> getToken() =>
+    FirebaseAuth.instance.currentUser?.getIdToken();
+
+  @override
+  Future<String?> refreshToken() =>
+    FirebaseAuth.instance.currentUser?.getIdToken(true);
+
+  @override
+  Future<void> logout() => FirebaseAuth.instance.signOut();
+}
+```
+
+### GoRouter guard pattern (same regardless of provider)
 
 ```dart
 redirect: (context, state) {
@@ -90,9 +121,11 @@ redirect: (context, state) {
 
 ### Rules
 
-- Never navigate from the splash screen programmatically — GoRouter handles redirection automatically
-- The `initializing` state must never persist longer than 3 seconds. If Firebase takes longer, treat as `NetworkError` with `isOffline: true`
-- Firebase client SDK is ONLY imported in `data/` and `core/` layers — never in `domain/`
+- `AuthService` interface lives in `core/auth/` — the concrete implementation lives in `core/auth/providers/`
+- Never import any auth SDK (`firebase_auth`, `amplify_auth_cognito`, etc.) directly in the auth interceptor — always through `AuthService`
+- Never navigate from the splash screen programmatically — GoRouter handles redirection
+- The `initializing` state must never persist longer than 3 seconds. If the auth SDK takes longer, treat as `NetworkError(isOffline: true)`
+- JWT claims are read server-side — the mobile app never decodes claims for authorization decisions
 
 ---
 
@@ -103,7 +136,7 @@ File: `core/network/api_client.dart` — the **only** file that calls HTTP.
 | Decision | Default |
 |----------|---------|
 | HTTP client | Dio with typed interceptors |
-| Auth interceptor | Adds `Authorization: Bearer <token>` via `getIdToken()` |
+| Auth interceptor | Adds `Authorization: Bearer <token>` via `AuthService.getToken()` — provider-agnostic |
 | Trace interceptor | Generates UUID and adds `X-Trace-ID` header per request |
 | Timeouts | Connect: 10s, Receive: 30s |
 | Error mapping | `DioException` → `AppError` in repository `catch` blocks. Never let `DioException` cross the data layer boundary. |
@@ -122,9 +155,9 @@ core/network/
 ### 401 retry logic
 
 1. Intercept the 401 response.
-2. Call `FirebaseAuth.instance.currentUser?.getIdToken(forceRefresh: true)`.
+2. Call `authService.refreshToken()`.
 3. Retry the original request once with the new token.
-4. If the retry also returns 401: emit logout event from `AuthService`.
+4. If the retry also returns 401: call `authService.logout()` to emit logout.
 
 ### Rules
 
@@ -387,12 +420,33 @@ Container(color: Color(0xFFFFFFFF))
 
 **Never include secrets in the app binary.** Everything in the APK/IPA is reversible.
 
+### Always required
+
 ```bash
 flutter run \
   --dart-define=API_URL=https://api.example.com \
-  --dart-define=FIREBASE_PROJECT_ID=my-project \
   --dart-define=APP_ENV=development
 ```
+
+| Variable | Sensitive | Description |
+|---|---|---|
+| `API_URL` | No | Backend base URL |
+| `APP_ENV` | No | `production` / `staging` / `development` |
+
+### Per-provider — add what your auth provider requires
+
+**Firebase example:**
+```bash
+--dart-define=FIREBASE_PROJECT_ID=my-project
+```
+
+**Auth0 example:**
+```bash
+--dart-define=AUTH0_DOMAIN=my-tenant.auth0.com \
+--dart-define=AUTH0_CLIENT_ID=abc123
+```
+
+Only add the variables your chosen auth provider needs. Do not add variables for providers you are not using.
 
 ### Access in code
 
@@ -400,20 +454,18 @@ flutter run \
 // core/config/app_config.dart
 class AppConfig {
   static const apiUrl = String.fromEnvironment('API_URL');
-  static const firebaseProjectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
   static const appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
+
+  // Add provider-specific constants here when needed:
+  // static const firebaseProjectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
+  // static const auth0Domain = String.fromEnvironment('AUTH0_DOMAIN');
+
+  static bool get isProduction => appEnv == 'production';
+  static bool get isDevelopment => appEnv == 'development';
 }
 ```
 
-### Variables
-
-| Variable | Sensitive | Description |
-|---|---|---|
-| `API_URL` | No | Backend base URL |
-| `FIREBASE_PROJECT_ID` | No | Firebase project ID |
-| `APP_ENV` | No | `production` / `staging` / `development` |
-
-Firebase platform config files (`google-services.json`, `GoogleService-Info.plist`) are treated as platform config, not secrets — but use separate files per environment and do not commit production files.
+Platform config files (`google-services.json`, `GoogleService-Info.plist`) are treated as platform config, not secrets — use separate files per environment and do not commit production files.
 
 ---
 
@@ -440,26 +492,28 @@ Firebase platform config files (`google-services.json`, `GoogleService-Info.plis
 - [ ] `flutter_riverpod` + `riverpod_annotation` (state management)
 - [ ] `dio` (HTTP client)
 - [ ] `go_router` (navigation)
-- [ ] `firebase_core` + `firebase_auth` + `firebase_messaging` (auth + push)
 - [ ] `freezed` + `freezed_annotation` + `json_serializable` + `build_runner` (codegen)
 - [ ] `connectivity_plus` (offline detection)
 - [ ] `permission_handler` (permissions)
 - [ ] `cached_network_image` (network images)
 - [ ] `shimmer` (skeleton screens)
+- [ ] Auth provider SDK: add packages required by the chosen provider (e.g., `firebase_core` + `firebase_auth`, or `auth0_flutter`, or custom JWT package)
+- [ ] Push notifications: `firebase_messaging` if using FCM, or equivalent for your provider
 - [ ] Dev/test: `flutter_test`, `mocktail`, `integration_test`, `patrol`
 
 ### Auth + Splash
 - [ ] `AppAuthState` enum with three values (`initializing`, `authenticated`, `unauthenticated`) in `core/auth/auth_state.dart`
-- [ ] `AuthService` in `core/auth/` observes `authStateChanges()` and starts with `initializing`
+- [ ] `AuthService` abstract class in `core/auth/auth_service.dart` with `getToken()`, `refreshToken()`, `logout()`, `stateChanges`
+- [ ] Concrete `AuthServiceImpl` in `core/auth/` implementing `AuthService` using the project's chosen auth provider
 - [ ] `SplashScreen` in `features/splash/` — logo only, no business logic, no HTTP
 - [ ] GoRouter guard redirects to `/splash` when `initializing`, never to `/auth/login` during init
 - [ ] No flash of login screen when user is already authenticated
 
 ### ApiClient
 - [ ] Dio instance in `core/network/api_client.dart`
-- [ ] `AuthInterceptor` adds `Authorization: Bearer` via `getIdToken()`
+- [ ] `AuthInterceptor` adds `Authorization: Bearer` via `AuthService.getToken()` — no direct import of auth SDK
 - [ ] `TraceInterceptor` adds `X-Trace-ID: <uuid>` per request
-- [ ] 401 retry: `getIdToken(forceRefresh: true)` → retry once → on second 401: logout
+- [ ] 401 retry: `AuthService.refreshToken()` → retry once → on second 401: `AuthService.logout()`
 - [ ] `DioException` caught in repositories, converted to `AppError`, never propagated raw
 
 ### Errors

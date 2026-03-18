@@ -100,11 +100,11 @@ class [Feature]Data with _$[Feature]Data {
 ```
 
 ### 6. Auth & User Context
-- **Token injection**: Auth interceptor in Dio adds `Authorization: Bearer <token>` via `FirebaseAuth.getIdToken()`. Never pass tokens manually from feature code.
-- **Token refresh**: On 401 response, auth interceptor calls `getIdToken(forceRefresh: true)` and retries once. On second 401, emits logout from `AuthService`.
+- **Token injection**: Auth interceptor in Dio adds `Authorization: Bearer <token>` via `AuthService.getToken()`. Never pass tokens manually from feature code.
+- **Token refresh**: On 401 response, auth interceptor calls `AuthService.refreshToken()` and retries once. On second 401, calls `AuthService.logout()`.
 - **Auth state**: GoRouter guard reads `AppAuthState` from `authServiceProvider`. Redirects to `/splash` during `initializing`, to `/auth/login` when `unauthenticated`.
 - **User data scoping**: All API calls are scoped to the authenticated user via the Bearer token. The backend enforces RLS.
-- **No local token storage**: Firebase manages tokens internally. Feature code never stores or reads tokens.
+- **No local token storage**: `AuthService` implementation manages tokens internally. Feature code never stores, reads, or decodes tokens.
 
 ### 7. Acceptance Criteria
 GIVEN/WHEN/THEN format. Each criterion must be:

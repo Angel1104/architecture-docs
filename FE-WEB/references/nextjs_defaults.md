@@ -96,71 +96,85 @@ File: `src/core/api/client.ts` — the **only** file that can call `fetch`.
 
 ### Responsibilities
 
-- Attach `Authorization: Bearer <token>` on every request
+- Attach `Authorization: Bearer <token>` on every request — token obtained from `AuthService.getToken()`
 - Generate and attach a UUID as `X-Trace-ID` on every request
 - Parse RFC 7807 error responses into typed `ApiError`
-- On 401: call `getIdToken(forceRefresh: true)` and retry the request **once**
-- On second 401: call `signOut()` + redirect to `/auth/login`
+- On 401: call `AuthService.refreshToken()` and retry the request **once**
+- On second 401: call `AuthService.logout()` + redirect to `/auth/login`
+
+### Design principle — auth provider agnostic
+
+The `ApiClient` depends on an `AuthService` abstraction, not on any specific auth SDK. The auth provider (Firebase, Auth0, Cognito, custom JWT, etc.) is injected — the ApiClient does not import any auth SDK directly.
+
+```typescript
+// src/core/auth/AuthService.ts
+export interface AuthService {
+  getToken(): Promise<string | null>
+  refreshToken(): Promise<string | null>
+  logout(): Promise<void>
+}
+```
 
 ### Canonical implementation pattern
 
 ```typescript
 // src/core/api/client.ts
-import { getAuth } from 'firebase/auth'
+import { AuthService } from '@/core/auth/AuthService'
 import { ApiError } from '@/core/errors/ApiError'
 import { v4 as uuidv4 } from 'uuid'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-  retry = false
-): Promise<T> {
-  const auth = getAuth()
-  const token = await auth.currentUser?.getIdToken()
-  const traceId = uuidv4()
+export function createApiClient(auth: AuthService) {
+  async function request<T>(
+    path: string,
+    options: RequestInit = {},
+    retry = false
+  ): Promise<T> {
+    const token = await auth.getToken()
+    const traceId = uuidv4()
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : '',
-      'X-Trace-ID': traceId,
-      ...options.headers,
-    },
-  })
+    const res = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+        'X-Trace-ID': traceId,
+        ...options.headers,
+      },
+    })
 
-  if (!res.ok) {
-    if (res.status === 401 && !retry) {
-      const freshToken = await auth.currentUser?.getIdToken(true)
-      if (freshToken) return request<T>(path, options, true)
-      await auth.signOut()
-      window.location.href = '/auth/login'
-      throw new Error('Unauthenticated')
+    if (!res.ok) {
+      if (res.status === 401 && !retry) {
+        const freshToken = await auth.refreshToken()
+        if (freshToken) return request<T>(path, options, true)
+        await auth.logout()
+        window.location.href = '/auth/login'
+        throw new Error('Unauthenticated')
+      }
+      const body = await res.json().catch(() => ({}))
+      throw {
+        type: body.type ?? 'error/unknown',
+        title: body.title ?? 'An error occurred',
+        status: res.status,
+        detail: body.detail ?? '',
+        traceId: body.traceId ?? traceId,
+      } satisfies ApiError
     }
-    const body = await res.json().catch(() => ({}))
-    throw {
-      type: body.type ?? 'error/unknown',
-      title: body.title ?? 'An error occurred',
-      status: res.status,
-      detail: body.detail ?? '',
-      traceId: body.traceId ?? traceId,
-    } satisfies ApiError
+
+    return res.json()
   }
 
-  return res.json()
-}
-
-export const apiClient = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
-  put: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
-  patch: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
-  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  return {
+    get: <T>(path: string) => request<T>(path),
+    post: <T>(path: string, body: unknown) =>
+      request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+    put: <T>(path: string, body: unknown) =>
+      request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
+    patch: <T>(path: string, body: unknown) =>
+      request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+    delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  }
 }
 ```
 
@@ -168,65 +182,81 @@ export const apiClient = {
 
 - `fetch` or `axios` are NEVER used outside `client.ts`
 - Never manually attach `Authorization` in a feature
-- Never store or read the Firebase token in feature code
+- Never import an auth SDK directly in `client.ts` — always through the `AuthService` interface
 - Every API call goes through `apiClient.get/post/put/patch/delete`
 
 ---
 
-## 4. Auth — Firebase Client SDK
+## 4. Auth — Provider-Agnostic Design
 
-File: `src/core/auth/firebase.ts` — initialization
-File: `src/core/auth/useAuth.ts` — auth hook
+File: `src/core/auth/AuthService.ts` — interface (always present)
+File: `src/core/auth/useAuth.ts` — auth hook (always present)
+File: `src/core/auth/<provider>.ts` — concrete implementation (project-specific)
 
-### Firebase initialization
+### The contract — what the FE always needs
+
+The FE needs exactly three things from auth:
 
 ```typescript
-// src/core/auth/firebase.ts
-import { initializeApp, getApps } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
-
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+// src/core/auth/AuthService.ts
+export interface AuthService {
+  getToken(): Promise<string | null>       // Bearer token for ApiClient
+  refreshToken(): Promise<string | null>   // Force-refresh on 401
+  logout(): Promise<void>                  // Clear session + navigate to login
 }
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
-export const auth = getAuth(app)
+export interface AuthUser {
+  id: string
+  email: string | null
+}
+
+export interface AuthState {
+  status: 'initializing' | 'authenticated' | 'unauthenticated'
+  user: AuthUser | null
+}
 ```
 
-### Auth hook
+### Auth hook (always the same shape, regardless of provider)
 
 ```typescript
-// src/core/auth/useAuth.ts
+// src/core/auth/useAuth.ts — always 'use client'
 'use client'
 
-import { useEffect, useState } from 'react'
-import { onAuthStateChanged, User } from 'firebase/auth'
-import { auth } from './firebase'
+export function useAuth(): AuthState {
+  // Implementation delegates to the injected provider
+  // Returns: { status, user }
+}
+```
 
-export function useAuth() {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+### Firebase implementation example
 
-  useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
-      setUser(u)
-      setLoading(false)
-    })
-  }, [])
+```typescript
+// src/core/auth/providers/firebase.ts
+// 'use client' — only used in client context
+import { getAuth, onAuthStateChanged } from 'firebase/auth'
 
-  return { user, loading }
+export class FirebaseAuthService implements AuthService {
+  async getToken() {
+    return getAuth().currentUser?.getIdToken() ?? null
+  }
+  async refreshToken() {
+    return getAuth().currentUser?.getIdToken(true) ?? null
+  }
+  async logout() {
+    await getAuth().signOut()
+  }
 }
 ```
 
 ### Rules
 
-- Firebase client SDK imports are ONLY in files marked `'use client'` or in `src/core/auth/`
-- **Never import Firebase client SDK in a Server Component**
-- `getIdToken()` is called only inside `apiClient` — never in features or components
+- The `AuthService` interface lives in `src/core/auth/` — it never changes between providers
+- Auth SDK imports (`firebase/auth`, `@auth0/nextjs-auth0`, etc.) are ONLY in `src/core/auth/providers/`
+- **Never import any auth SDK in a Server Component** — Firebase client SDK, Auth0 client, etc. are all client-only
+- `getToken()` is called only inside `apiClient` — never in features or components directly
 - Token refresh on 401 is handled by `apiClient` — never manually in features
-- On second 401: `signOut()` + redirect — no retry loops, no dialogs
+- On second 401: `logout()` + redirect — no retry loops, no dialogs
+- The 3-state auth model (`initializing` / `authenticated` / `unauthenticated`) is mandatory regardless of provider — it prevents flash of login screen on page load
 
 ### Form state preservation on re-auth
 
@@ -506,30 +536,41 @@ src/theme/
 
 ## 10. Environment Variables
 
-### NEXT_PUBLIC_ — client-visible (non-sensitive only)
+### What is always required (project-agnostic)
 
-| Variable | Purpose |
-|----------|---------|
-| `NEXT_PUBLIC_API_URL` | Backend base URL (e.g., `https://api.example.com`) |
-| `NEXT_PUBLIC_FIREBASE_API_KEY` | Firebase web API key |
-| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Firebase auth domain |
-| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Firebase project ID |
-| `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase app ID |
+| Variable | Visibility | Purpose |
+|----------|-----------|---------|
+| `NEXT_PUBLIC_API_URL` | Client | Backend base URL — e.g. `https://api.example.com` |
+| `NEXT_PUBLIC_APP_ENV` | Client | `production` / `staging` / `development` |
 
-### Server-side only (never NEXT_PUBLIC_)
+### Auth provider variables — added per project
 
-| Variable | Purpose |
-|----------|---------|
-| `FIREBASE_ADMIN_PRIVATE_KEY` | Firebase Admin SDK private key (Server Actions / API routes only) |
-| `FIREBASE_ADMIN_CLIENT_EMAIL` | Firebase Admin SDK client email |
-| `DATABASE_URL` | DB connection string (if Server Actions use DB directly) |
+These depend on the auth provider chosen for the project. Examples:
+
+**Firebase Auth:**
+| Variable | Visibility | Purpose |
+|----------|-----------|---------|
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Client | Web API key |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Client | Auth domain |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Client | Project ID |
+| `FIREBASE_ADMIN_PRIVATE_KEY` | Server only | Admin SDK — Server Actions only |
+| `FIREBASE_ADMIN_CLIENT_EMAIL` | Server only | Admin SDK — Server Actions only |
+
+**Auth0:**
+| Variable | Visibility | Purpose |
+|----------|-----------|---------|
+| `NEXT_PUBLIC_AUTH0_DOMAIN` | Client | Auth0 domain |
+| `NEXT_PUBLIC_AUTH0_CLIENT_ID` | Client | Auth0 client ID |
+| `AUTH0_CLIENT_SECRET` | Server only | Never client-side |
+
+> Document the actual variables used in `.env.example`. These tables are examples — not all are required.
 
 ### Rules
 
-- `NEXT_PUBLIC_` variables are bundled into the client. Never put secrets there.
-- Firebase Admin SDK is server-side only — never in `'use client'` files.
-- All env vars documented in `.env.example` with empty values and a comment.
-- Missing required env vars cause a startup error — validate with `src/lib/env.ts` using Zod.
+- `NEXT_PUBLIC_` variables are bundled into the client binary. Never put secrets or private keys there.
+- Auth SDK server-side credentials (Admin SDK, client secrets) are server-only — never in `'use client'` files.
+- All env vars documented in `.env.example` with empty values and a comment describing what they are.
+- Missing required env vars cause a startup error — validate with `src/lib/env.ts` using Zod at boot.
 
 ---
 
