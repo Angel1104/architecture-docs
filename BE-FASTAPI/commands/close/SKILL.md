@@ -153,8 +153,22 @@ Append to the end of the file:
 If CR type is `feature`, update `specs/project.md`:
 
 1. Read `specs/project.md`
-2. Find the `## Module Map` or `## Feature Map` section
-3. For the module that was built, update or add a row with actual file paths, handler names, and endpoints from the implementation just completed.
+2. Find the `## Module Map` section
+3. Update or add a row for the module just built using this exact format:
+
+```markdown
+| Módulo | Archivos clave | Handlers/Commands | Endpoints expuestos |
+|--------|---------------|-------------------|---------------------|
+| <module-name> | `app/domain/models/<name>.py`, `app/application/commands/<name>.py`, `app/adapters/outbound/<name>_repository.py`, `app/adapters/inbound/<name>_router.py` | `Create<Name>Command`, `Get<Name>Query` | `POST /internal/tasks/<name>`, `GET /internal/tasks/<name>/{id}` |
+```
+
+Use the **actual file paths and names** from the implementation — not templates. Include:
+- Domain model file (`app/domain/models/`)
+- Application command/query handler files (`app/application/commands/` or `queries/`)
+- Outbound adapter — repository implementation (`app/adapters/outbound/`)
+- Inbound adapter — FastAPI router (`app/adapters/inbound/`)
+- Handler/command class names
+- Exposed endpoint routes (e.g. `POST /internal/tasks/process-document`)
 
 This keeps the project map current so future bug CRs can locate files without scanning the codebase.
 
