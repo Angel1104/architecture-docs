@@ -17,6 +17,8 @@
 | Navegación | GoRouter |
 | Modelos | freezed + json_serializable |
 | Auth cliente | Firebase Authentication (firebase_auth) |
+| Push notifications | firebase_messaging |
+| Permisos | permission_handler |
 
 ---
 
@@ -399,7 +401,148 @@ Container(color: Color(0xFFFFFFFF))
 
 ---
 
-## 13. Variables de entorno — mobile (dart-define)
+## 13. Splash screen e inicialización
+
+### El problema
+
+Entre que la app arranca y `authStateChanges()` emite el primer valor, hay un gap de ~300-500ms donde el estado de auth es desconocido. Sin manejo explícito, GoRouter redirige al usuario a `/auth/login` aunque ya estuviera autenticado — produciendo un flash visible.
+
+### Solución fijada: estado de inicialización explícito
+
+El `AuthService` expone tres estados distintos, no dos:
+
+```dart
+// core/auth/auth_state.dart
+enum AppAuthState {
+  initializing,   // Firebase aún no ha emitido el primer valor
+  authenticated,  // Usuario autenticado
+  unauthenticated // Usuario no autenticado (sabemos con certeza)
+}
+```
+
+El guard de GoRouter solo redirige cuando el estado NO es `initializing`:
+
+```dart
+// app/router/app_router.dart
+redirect: (context, state) {
+  final authState = ref.read(authServiceProvider).state;
+
+  // Mientras inicializa: no redirigir, mostrar splash
+  if (authState == AppAuthState.initializing) return '/splash';
+
+  final isAuthenticated = authState == AppAuthState.authenticated;
+  final isGoingToAuth = state.matchedLocation.startsWith('/auth');
+  final isOnSplash = state.matchedLocation == '/splash';
+
+  if (!isAuthenticated && !isGoingToAuth) return '/auth/login';
+  if (isAuthenticated && (isGoingToAuth || isOnSplash)) return '/home';
+  return null;
+},
+```
+
+### Pantalla splash
+
+La pantalla `/splash` muestra el logo y un indicador de carga mínimo. Su único trabajo es existir mientras `authStateChanges()` no ha emitido. En cuanto el estado cambia de `initializing`, GoRouter redirige automáticamente.
+
+```dart
+// features/splash/presentation/screens/splash_screen.dart
+class SplashScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(child: AppLogo()), // sin lógica, solo visual
+    );
+  }
+}
+```
+
+### Secuencia de arranque en bootstrap
+
+```dart
+// app/bootstrap/app_bootstrap.dart
+Future<void> bootstrap() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 1. Firebase primero — todo lo demás depende de esto
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // 2. Servicios que no dependen de auth
+  await _initServices();
+
+  // 3. Arrancar la app — el AuthService escucha authStateChanges internamente
+  runApp(ProviderScope(child: AppWidget()));
+}
+```
+
+### Reglas de inicialización
+
+- Nunca navegar desde el splash programáticamente. El guard de GoRouter maneja la redirección.
+- El estado `initializing` nunca persiste más de 3 segundos. Si Firebase tarda más, asumir error de conectividad y mostrar `NetworkError`.
+- La pantalla splash no tiene providers de negocio ni hace llamadas HTTP.
+
+---
+
+## 14. Permisos de plataforma
+
+### Librería fijada: `permission_handler`
+
+Todos los permisos del sistema se gestionan con `permission_handler`. No se usan APIs nativas directamente.
+
+### Permisos comunes y cuándo pedirlos
+
+| Permiso | Cuándo pedirlo |
+|---|---|
+| Notificaciones push | Al primer login exitoso, explicando el valor antes de pedir |
+| Cámara | Justo antes de abrir la cámara, no al arrancar la app |
+| Galería (fotos) | Justo antes de abrir el selector de imágenes |
+| Almacenamiento (Android <13) | Justo antes de descargar un archivo |
+
+**Regla fundamental:** Nunca pedir permisos al arrancar la app. Se piden en el momento en que el usuario intenta usar la funcionalidad que los requiere (just-in-time).
+
+### Patrón estándar para pedir un permiso
+
+```dart
+// core/utils/permission_utils.dart
+Future<bool> requestCameraPermission() async {
+  final status = await Permission.camera.status;
+
+  if (status.isGranted) return true;
+
+  if (status.isPermanentlyDenied) {
+    // El usuario denegó permanentemente — dirigir a Settings
+    await openAppSettings();
+    return false;
+  }
+
+  final result = await Permission.camera.request();
+  return result.isGranted;
+}
+```
+
+### Manejo de permiso denegado permanentemente
+
+Si el usuario denegó un permiso permanentemente, **no mostrar el dialog del sistema** (ya no aparece). En su lugar:
+
+1. Mostrar un bottom sheet explicando por qué se necesita el permiso.
+2. Ofrecer un botón "Abrir configuración" que llama `openAppSettings()`.
+3. No bloquear el flujo del usuario — el feature simplemente no está disponible.
+
+### Notificaciones push
+
+Las notificaciones push requieren configuración adicional:
+- iOS: `firebase_messaging` necesita la entitlement `APS Environment` en el perfil de provisioning.
+- Android: el `google-services.json` ya incluye la config necesaria.
+- El token FCM se obtiene con `FirebaseMessaging.instance.getToken()` y se envía al backend para guardarlo asociado al usuario.
+
+### Reglas de permisos
+
+- Nunca asumir que un permiso está concedido. Siempre verificar antes de usarlo.
+- Los permisos se solicitan desde el use case o el controller, nunca desde un widget directamente.
+- Si el permiso es denegado, el controller emite un estado de error tipado que la screen muestra. No hay lógica de permisos en las screens.
+
+---
+
+## 15. Variables de entorno — mobile (dart-define)
 
 ### Regla fundamental
 
@@ -438,7 +581,7 @@ class AppConfig {
 
 ---
 
-## 14. Testing strategy — mobile
+## 16. Testing strategy — mobile
 
 ### Postura
 
@@ -464,7 +607,7 @@ El testing en Flutter sigue tres niveles nativos del framework. No se mockean la
 
 ---
 
-## 15. Instrucciones para agentes — crear nueva feature Flutter
+## 17. Instrucciones para agentes — crear nueva feature Flutter
 
 1. Crea `lib/features/[nombre]/` con: `data/`, `domain/`, `presentation/`.
 2. En `domain/`: crea la entidad, el abstract del repositorio y los use cases.
@@ -475,29 +618,38 @@ El testing en Flutter sigue tres niveles nativos del framework. No se mockean la
 
 ---
 
-## 16. Instrucciones para agentes — proyecto nuevo (mobile)
+## 18. Instrucciones para agentes — proyecto nuevo (mobile)
 
 1. Crea la estructura de carpetas exacta definida en la sección 4.
-2. Instala dependencias base: flutter, riverpod, dio, go_router, firebase_core, firebase_auth, freezed, json_serializable, connectivity_plus.
+2. Instala dependencias base: flutter, riverpod, dio, go_router, firebase_core, firebase_auth, firebase_messaging, freezed, json_serializable, connectivity_plus, permission_handler.
 3. Instala dependencias de testing: flutter_test (incluido), mocktail, integration_test, patrol.
-4. Crea el `ApiClient` base en `core/network/` con los interceptores de auth, trace y parseo de errores a `AppError`.
-5. Crea la `sealed class AppError` en `core/errors/app_error.dart`.
-6. Inicializa Firebase en `app/bootstrap/app_bootstrap.dart`.
-7. Implementa el `AuthService` en `core/auth/` con `authStateChanges()`.
-8. Configura el `ConnectivityService` en `core/network/` para detectar estado de red.
-9. Configura GoRouter en `app/router/app_router.dart` con el guard de auth.
-10. Crea la estructura de tema base en `theme/` con los semantic tokens mínimos de la sección 12.
-11. Verifica que ningún componente base tiene colores o valores hardcodeados.
+4. Crea el `AppAuthState` enum en `core/auth/auth_state.dart` con los tres estados: `initializing`, `authenticated`, `unauthenticated`.
+5. Implementa el `AuthService` en `core/auth/` con `authStateChanges()` y estado `initializing` inicial.
+6. Crea la pantalla `SplashScreen` en `features/splash/`.
+7. Configura GoRouter con guard que respeta el estado `initializing` (sección 13).
+8. Inicializa Firebase en `app/bootstrap/app_bootstrap.dart` con la secuencia correcta.
+9. Crea el `ApiClient` base en `core/network/` con los interceptores de auth, trace y parseo de errores a `AppError`.
+10. Crea la `sealed class AppError` en `core/errors/app_error.dart`.
+11. Configura el `ConnectivityService` en `core/network/` para detectar estado de red.
+12. Crea la estructura de tema base en `theme/` con los semantic tokens mínimos de la sección 12.
+13. Verifica que ningún componente base tiene colores o valores hardcodeados.
 
 ---
 
-## 17. Checklist de proyecto nuevo — mobile
+## 19. Checklist de proyecto nuevo — mobile
 
 ### Estructura
 - [ ] Estructura exacta de carpetas creada
 - [ ] Dependencias base instaladas (riverpod, dio, go_router, firebase_core, firebase_auth, freezed)
 - [ ] `analysis_options.yaml` configurado con lints estrictos
 - [ ] `.gitignore` configurado (build, .dart_tool, google-services.json de prod)
+
+### Inicialización y splash
+- [ ] `AppAuthState` enum con tres estados (`initializing`, `authenticated`, `unauthenticated`)
+- [ ] `SplashScreen` creada en `features/splash/`
+- [ ] Guard de GoRouter respeta estado `initializing` (no redirige hasta que Firebase emite)
+- [ ] No hay flash de login screen cuando el usuario ya estaba autenticado
+- [ ] Bootstrap inicializa Firebase antes de `runApp`
 
 ### Auth
 - [ ] Firebase project configurado para iOS y Android
@@ -507,6 +659,12 @@ El testing en Flutter sigue tres niveles nativos del framework. No se mockean la
 - [ ] Manejo de 401 (refresh + retry) implementado
 - [ ] Guard de auth en GoRouter configurado
 - [ ] Flujo completo de login → token → request autenticado probado
+
+### Permisos
+- [ ] `permission_handler` instalado
+- [ ] `permission_utils.dart` con patrón estándar de request + permanentlyDenied
+- [ ] Ningún widget solicita permisos directamente (va por controller)
+- [ ] FCM token se obtiene y envía al backend tras login (si el proyecto usa push)
 
 ### ApiClient
 - [ ] `core/network/` implementado con Dio + interceptores
@@ -544,5 +702,5 @@ El testing en Flutter sigue tres niveles nativos del framework. No se mockean la
 
 ---
 
-*Versión: 1.1 — Marzo 2026*
+*Versión: 1.2 — Marzo 2026*
 *Derivado de ARCHITECTURE.md v3.0. Lee ese documento primero para el contexto del sistema completo.*

@@ -15,6 +15,7 @@
 | Estilos | Tailwind CSS |
 | Estado global | Zustand |
 | Estado de servidor | TanStack Query |
+| Formularios | react-hook-form + Zod |
 | Auth cliente | Firebase Authentication (client SDK) |
 | Despliegue | Vercel |
 
@@ -202,30 +203,133 @@ export function isApiError(err: unknown): err is ApiError {
 
 ---
 
-## 9. Variables de entorno — web (Vercel)
+## 8. SSR vs Client Components — Next.js App Router
 
-### Distinción importante
+### Regla por defecto
 
-| Tipo | Prefijo | Visible en | Puede contener secretos |
-|---|---|---|---|
-| Públicas (bundleadas) | `NEXT_PUBLIC_` | Cliente + Servidor | **No** — va al bundle del cliente |
-| Privadas | sin prefijo | Solo Servidor (SSR/API Routes) | Sí |
+**Todo componente es Server Component por defecto.** Solo se añade `'use client'` cuando hay una razón explícita. No se pone `'use client'` preventivamente ni "por si acaso".
 
-### Variables de la capa web
+### Cuándo usar `'use client'`
 
-| Variable | Tipo | Descripción |
-|---|---|---|
-| `NEXT_PUBLIC_FIREBASE_API_KEY` | Pública | API Key de Firebase (no es un secreto real) |
-| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Pública | Dominio de auth de Firebase |
-| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Pública | ID del proyecto Firebase |
-| `NEXT_PUBLIC_API_URL` | Pública | URL base del backend NestJS |
-| `NEXT_PUBLIC_APP_ENV` | Pública | `production` / `staging` / `development` |
+| Necesita `'use client'` | No necesita `'use client'` |
+|---|---|
+| Usa hooks de React (`useState`, `useEffect`, `useRef`, etc.) | Fetch de datos en servidor |
+| Usa contexto de React (`useContext`) | Layouts y páginas estáticas |
+| Usa eventos del DOM (`onClick`, `onChange`) | Componentes de solo presentación sin interactividad |
+| Usa `useAuth`, `useStore` u otros hooks propios | Server Actions (formularios sin JS) |
+| Integra librerías que requieren el browser (Firebase client SDK, analytics) | Componentes que solo muestran datos |
 
-**Regla:** Ningún secreto real (tokens de servicio, claves privadas) va en variables `NEXT_PUBLIC_`. Si necesitas hacer llamadas autenticadas server-side, usa API Routes de Next.js con variables privadas.
+### Patrón: empujar `'use client'` hacia las hojas
+
+El objetivo es que los Server Components envuelvan a los Client Components, no al revés. Los Server Components pueden importar Client Components, pero los Client Components **no pueden importar Server Components**.
+
+```
+app/(dashboard)/users/page.tsx        ← Server Component (fetch de datos)
+  └── features/users/components/
+        ├── UserList.tsx               ← Server Component (recibe datos como props)
+        └── UserActions.tsx            ← 'use client' (tiene botones con onClick)
+```
+
+### Dónde vive Firebase client SDK
+
+El Firebase client SDK **requiere browser**. Su inicialización y cualquier hook que lo use (`useAuth`, `getIdToken`) deben estar en Client Components o en `lib/auth/` llamado desde Client Components.
+
+**Nunca importar Firebase client SDK en un Server Component.**
+
+### Server Actions
+
+Para formularios simples donde no se necesita estado de carga elaborado, usar Server Actions en lugar de fetch desde el cliente. Los Server Actions viven en archivos con `'use server'` o marcados con la directiva inline.
+
+```typescript
+// app/(dashboard)/profile/actions.ts
+'use server'
+
+export async function updateProfile(formData: FormData) {
+  // Esta función corre en el servidor
+  // Obtener el token de sesión via cookies (no desde Firebase client SDK)
+}
+```
+
+### Reglas de Server vs Client
+
+- Nunca poner `'use client'` en layouts principales sin razón. Un layout con `'use client'` convierte toda su subtree en Client Components.
+- Los datos se fetchean en Server Components y se pasan como props a los Client Components que los muestran.
+- El estado de UI local (modales, tabs, toggles) vive en Client Components. El estado de servidor vive en TanStack Query desde Client Components.
+- `app/` contiene principalmente Server Components. `features/[nombre]/components/` puede mezclar según necesidad.
 
 ---
 
-## 10. Theme architecture — web
+## 9. Formularios
+
+### Stack fijado: react-hook-form + Zod
+
+**react-hook-form** maneja el estado del formulario y la integración con componentes controlados. **Zod** define el schema de validación client-side. Los dos se conectan con `@hookform/resolvers/zod`.
+
+### Responsabilidades de validación
+
+| Capa | Qué valida | Cuándo |
+|---|---|---|
+| Zod (client) | Formato, campos requeridos, longitudes | Antes de enviar al backend |
+| Backend (Zod en NestJS) | Reglas de negocio, unicidad, permisos | Siempre — el client-side es solo UX |
+
+**El cliente nunca asume que su validación es suficiente.** Siempre se maneja el 422 del backend.
+
+### Patrón estándar de formulario
+
+```typescript
+// features/[nombre]/components/ExampleForm.tsx
+'use client'
+
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+
+const schema = z.object({
+  email: z.string().email('Email inválido'),
+  name: z.string().min(2, 'Mínimo 2 caracteres'),
+})
+
+type FormValues = z.infer<typeof schema>
+
+export function ExampleForm() {
+  const { register, handleSubmit, setError, formState: { errors, isSubmitting } } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+  })
+
+  const onSubmit = async (data: FormValues) => {
+    try {
+      await createSomething(data) // función en features/api/
+    } catch (err) {
+      if (isApiError(err) && err.status === 422) {
+        // Mapear fieldErrors del backend a los campos del form
+        err.fieldErrors?.forEach(({ field, message }) => {
+          setError(field as keyof FormValues, { message })
+        })
+      }
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input {...register('email')} />
+      {errors.email && <span>{errors.email.message}</span>}
+      <button type="submit" disabled={isSubmitting}>Guardar</button>
+    </form>
+  )
+}
+```
+
+### Reglas de formularios
+
+- Todo formulario usa `react-hook-form`. No se manejan formularios con `useState` por campo.
+- Todo formulario tiene un schema Zod. La validación client-side es siempre optimista (para UX), nunca la única línea de defensa.
+- Los errores 422 del backend se mapean a los campos del formulario con `setError`. No se muestran como toast genérico si hay `fieldErrors`.
+- El botón de submit se deshabilita con `isSubmitting` para evitar doble envío.
+- Los schemas Zod de formularios viven en `features/[nombre]/types.ts` junto a los tipos de la feature.
+
+---
+
+## 11. Theme architecture — web
 
 ### Jerarquía de tokens
 
@@ -276,7 +380,7 @@ theme/
 
 ---
 
-## 11. Testing strategy — web
+## 12. Testing strategy — web
 
 ### Postura
 
@@ -301,7 +405,7 @@ theme/
 
 ---
 
-## 12. Instrucciones para agentes — crear nueva feature web
+## 13. Instrucciones para agentes — crear nueva feature web
 
 1. Crea `src/features/[nombre]/` con: `components/`, `hooks/`, `store/`, `api/`, `types.ts`.
 2. Define los tipos en `types.ts`.
@@ -313,23 +417,24 @@ theme/
 
 ---
 
-## 13. Instrucciones para agentes — proyecto nuevo (web)
+## 14. Instrucciones para agentes — proyecto nuevo (web)
 
 1. Crea la estructura de carpetas exacta definida en la sección 3.
-2. Instala dependencias base: Next.js 14+, TypeScript, Tailwind CSS, Zustand, TanStack Query, firebase.
+2. Instala dependencias base: Next.js 14+, TypeScript, Tailwind CSS, Zustand, TanStack Query, firebase, react-hook-form, zod, @hookform/resolvers.
 3. Instala dependencias de testing: Vitest, React Testing Library, msw, Playwright.
 4. Crea el `ApiClient` base en `lib/api/client.ts` con los interceptores de auth, trace y manejo de errores tipado.
 5. Crea el tipo `ApiError` en `lib/api/errors.ts` y la función `isApiError`.
-6. Configura el `ErrorBoundary` global en `app/layout.tsx`.
-7. Inicializa Firebase client SDK en `lib/auth/firebase.ts`.
-8. Crea la estructura de tema base en `theme/` con los semantic tokens mínimos de la sección 10.
+6. Configura el `ErrorBoundary` global en `app/layout.tsx` (Server Component).
+7. Inicializa Firebase client SDK en `lib/auth/firebase.ts` (Client Component o llamado solo desde `'use client'`).
+8. Crea la estructura de tema base en `theme/` con los semantic tokens mínimos de la sección 11.
 9. Configura `tailwind.config.ts` para consumir las CSS custom properties del tema.
-10. Crea `.env.example` con todas las variables de la sección 9 con valores vacíos.
+10. Crea `.env.example` con todas las variables de la sección 10 con valores vacíos.
 11. Verifica que ningún componente base tiene colores o valores hardcodeados.
+12. Verifica que ningún Server Component importa Firebase client SDK.
 
 ---
 
-## 14. Checklist de proyecto nuevo — web
+## 15. Checklist de proyecto nuevo — web
 
 ### Estructura
 - [ ] Estructura exacta de carpetas creada
@@ -355,6 +460,17 @@ theme/
 - [ ] `tailwind.config.ts` configurado para consumir las variables
 - [ ] Verificado que ningún componente base tiene colores hardcodeados
 
+### SSR y Client Components
+- [ ] Ningún Server Component importa Firebase client SDK
+- [ ] `'use client'` solo en componentes que lo necesitan (hooks, eventos DOM)
+- [ ] Layouts principales son Server Components
+- [ ] Firebase client SDK inicializado solo desde contexto cliente
+
+### Formularios
+- [ ] react-hook-form + zod instalados con @hookform/resolvers
+- [ ] Al menos un formulario implementado con el patrón estándar
+- [ ] Errores 422 del backend se mapean a campos del formulario con `setError`
+
 ### Manejo de errores
 - [ ] `ApiError` type definido en `lib/api/errors.ts`
 - [ ] ApiClient parsea errores RFC 7807 y lanza `ApiError`
@@ -376,5 +492,5 @@ theme/
 
 ---
 
-*Versión: 1.1 — Marzo 2026*
+*Versión: 1.2 — Marzo 2026*
 *Derivado de ARCHITECTURE.md v3.0. Lee ese documento primero para el contexto del sistema completo.*
