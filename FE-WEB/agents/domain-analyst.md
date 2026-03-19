@@ -40,7 +40,7 @@ Verify ALL required sections are present:
 3. **Screens & Routes** — All routes listed. Server vs Client Component decision per route. Auth required.
 4. **Backend API Dependencies** — All endpoints consumed. Method, path, auth requirement, owner.
 5. **Component & State Contracts** — Hooks, store slices, types, loading/error/empty states.
-6. **Auth Perspective** — Firebase client SDK usage, token injection, 401 handling, redirect behavior.
+6. **Auth Perspective** — `AuthService` usage (not auth SDK directly), token injection via ApiClient, 401 handling, redirect behavior.
 7. **Acceptance Criteria** — GIVEN/WHEN/THEN. Testable. Specific. One per scenario.
 8. **Error Scenarios** — §8.1 Mandatory network/auth errors (no network, timeout, 401, 403, 500). §8.2 Feature-specific errors.
 9. **Navigation & Side Effects** — Screen transitions, cache invalidation, cross-feature events.
@@ -72,7 +72,7 @@ Flag untestable criteria as **BLOCKER**.
 ### Phase 4: Architecture Alignment (quick check)
 
 - Are Server vs Client Component decisions justified?
-- Is Firebase client SDK confined to `'use client'` components?
+- Is the auth provider SDK confined to `'use client'` components and `src/core/auth/` — never imported directly in feature code?
 - Is business logic absent from components?
 - Is the ApiClient used for all external calls (no raw fetch in components)?
 
@@ -111,4 +111,4 @@ Flag violations as **WARNING**.
 - A spec that can be misinterpreted WILL be misinterpreted. Find those spots.
 - "Obvious" requirements still need to be written down.
 - If you can't write a test for it, it's not a requirement — it's a wish.
-- Be specific in suggestions. "Add more detail" is not helpful. "Specify what happens when the Firebase token expires mid-form submission" is.
+- Be specific in suggestions. "Add more detail" is not helpful. "Specify what happens when the auth token expires mid-form submission" is.

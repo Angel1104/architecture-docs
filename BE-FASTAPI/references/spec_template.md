@@ -1,18 +1,19 @@
 # Specification Template Reference
 
-This document defines the canonical format for feature specifications at comocom. Every feature MUST have a spec in `specs/<feature-name>.spec.md` before any implementation code is written.
+This document defines the canonical format for feature specifications in this kit. Every feature MUST have a spec in `specs/cr/<cr-id>.spec.md` before any implementation code is written.
 
-## Spec Lifecycle
+## Spec Lifecycle (CR status)
 
 ```
-DRAFT → REVIEWED → APPROVED → IMPLEMENTING → DONE
+OPEN → IN SPEC → SPECCED → PLANNED → BUILT → CLOSED
 ```
 
-- **DRAFT**: Author is writing/filling in the spec
-- **REVIEWED**: Multi-agent review completed (`/spec-review`), revisions addressed
-- **APPROVED**: All blockers resolved, ready for implementation
-- **IMPLEMENTING**: `/implement` is in progress
-- **DONE**: All acceptance criteria pass, feature is shipped
+- **OPEN**: CR item created by `/intake`, spec not yet started
+- **IN SPEC**: `/spec` is in progress (draft and review phase)
+- **SPECCED**: Spec approved — ready for `/plan` (feature/security) or `/build` (change/refactor)
+- **PLANNED**: Plan approved — ready for `/build`
+- **BUILT**: Implementation approved — ready for `/close`
+- **CLOSED**: All ACs verified, CR formally closed by `/close`
 
 ## Required Sections
 
@@ -182,17 +183,17 @@ A spec is ready for review when:
 - [ ] §8.1 Auth failures present (all 5 rows)
 - [ ] Read-RBAC defined for every port that returns data
 - [ ] Operation ordering defined for every multi-step command
-- [ ] All technical defaults applied (see `.claude/references/technical_defaults.md`)
+- [ ] All technical defaults applied (see `references/technical_defaults.md`)
 
 ---
 
 ## Naming Convention
 
-Spec files: `specs/<feature-name>.spec.md` — kebab-case, descriptive name.
+Spec files: `specs/cr/<cr-id>.spec.md` — written by `/spec` after `/intake` creates the CR item.
 
-Good: `user-registration.spec.md`, `invoice-pdf-generation.spec.md`, `tenant-onboarding.spec.md`
+The CR-ID is auto-generated at intake: `YYMMDD-HHMMSS-<3 random chars>` — e.g. `260311-143022-a7k`
 
-Bad: `feature1.spec.md`, `new-stuff.spec.md`, `update.spec.md`
+Do not create spec files manually outside this path — the gate checks in `/plan` and `/build` look for `specs/cr/<cr-id>.spec.md`.
 
 ---
 

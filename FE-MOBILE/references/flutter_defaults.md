@@ -344,7 +344,7 @@ Future<bool> requestCameraPermission() async {
 ### Push notification permissions
 
 - Request at first login, after explaining the value to the user
-- Get FCM token with `FirebaseMessaging.instance.getToken()` and send to backend
+- Get push token from the push notifications SDK (e.g., `FirebaseMessaging.instance.getToken()` for FCM) and send to backend
 
 ---
 
@@ -353,7 +353,7 @@ Future<bool> requestCameraPermission() async {
 | What to test | Tool | Type |
 |---|---|---|
 | Use cases + domain logic | `flutter_test` | Unit |
-| Controllers with fake repositories | `flutter_test` + `mocktail` | Unit |
+| Controllers (mock use cases with mocktail) | `flutter_test` + `mocktail` | Unit |
 | Widget screens (loading, data, error states) | `flutter_test` widget tests | Integration |
 | Critical end-to-end flows | `integration_test` + `patrol` | E2E |
 
@@ -361,23 +361,31 @@ Future<bool> requestCameraPermission() async {
 
 ```dart
 // test/fakes/fake_user_repository.dart
+// Implements domain interface — guarantees contract compliance
+// Use seed() in setUp() — never constructor injection
 class FakeUserRepository implements IUserRepository {
-  final List<User> _users = [];
+  final Map<String, User> _store = {};
 
   @override
-  Future<User?> findById(String id) async =>
-    _users.firstWhereOrNull((u) => u.id == id);
+  Future<User?> findById(String id) async => _store[id];
 
   @override
-  Future<void> save(User user) async => _users.add(user);
+  Future<void> save(User user) async => _store[user.id] = user;
+
+  // Test helpers
+  void seed(User user) => _store[user.id] = user;
+  void clear() => _store.clear();
 }
 ```
 
-Use `FakeRepository` implementations for use case tests — do NOT use `mocktail` to mock abstract interfaces in use case tests. Use `mocktail` only for controller tests (mocking use cases).
+**Layer → Test tool rule:**
+- Use case tests → `FakeRepository` (implements domain interface, no HTTP, no mocks)
+- Controller tests → `mocktail` (mocks use cases, NOT repositories)
+- Never use `mocktail` to mock domain repository interfaces — FakeRepository guarantees contract compliance
 
 ### Rules
 
-- Tests live alongside source: `features/auth/domain/usecases/login_usecase_test.dart`
+- Tests live in `test/` mirroring `lib/`: `test/features/auth/domain/usecases/login_usecase_test.dart`
 - Every authenticated feature has at least one user isolation test: user A's data must not appear when user B is authenticated
 - Never mock `ApiClient` or `Dio` directly — use a fake repository
 - Test naming: `test('<action> when <condition> should <result>')`

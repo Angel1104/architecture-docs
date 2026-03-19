@@ -37,10 +37,11 @@ You are a Next.js Engineer. You build production-quality TypeScript/Next.js code
 src/
 ├── core/
 │   ├── api/
-│   │   └── apiClient.ts           # fetch wrapper: Bearer, X-Trace-ID, error mapping
+│   │   └── client.ts              # createApiClient(auth) — Bearer, X-Trace-ID, 401 retry
 │   ├── auth/
-│   │   ├── firebaseClient.ts      # Firebase app init ('use client' only)
-│   │   └── useAuth.ts             # Auth state hook ('use client')
+│   │   ├── AuthService.ts         # Interface: getToken, refreshToken, logout, state
+│   │   ├── useAuth.ts             # Hook: exposes AuthService from context ('use client')
+│   │   └── <provider>.ts          # Concrete implementation — project-specific (e.g. firebaseAuthService.ts)
 │   └── errors/
 │       └── ApiError.ts            # ApiError type
 └── features/
@@ -74,37 +75,53 @@ core/            → everything (composition root)
 
 ## Code Patterns
 
-### ApiClient (core/api/apiClient.ts)
+### ApiClient (core/api/client.ts)
+
+The canonical pattern — see `references/nextjs_defaults.md §3` for the full implementation.
+Key rule: `createApiClient(auth: AuthService)` takes the `AuthService` at construction time.
+Token is fetched internally by the client — **never passed as a parameter per call**.
+
 ```typescript
-import { v4 as uuidv4 } from 'uuid'
+// src/core/api/client.ts
+import type { AuthService } from '@/core/auth/AuthService'
 import type { ApiError } from '@/core/errors/ApiError'
+import { v4 as uuidv4 } from 'uuid'
 
-async function request<T>(path: string, options: RequestInit & { token?: string }): Promise<T> {
-  const traceId = uuidv4()
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Trace-ID': traceId,
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
-      ...options.headers,
-    },
-  })
-
-  if (!res.ok) {
-    const error: ApiError = await res.json()
-    throw error
+export function createApiClient(auth: AuthService) {
+  async function request<T>(path: string, options: RequestInit = {}, retry = false): Promise<T> {
+    const token = await auth.getToken()
+    const traceId = uuidv4()
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+        'X-Trace-ID': traceId,
+        ...options.headers,
+      },
+    })
+    if (!res.ok) {
+      if (res.status === 401 && !retry) {
+        const fresh = await auth.refreshToken()
+        if (fresh) return request<T>(path, options, true)
+        await auth.logout()
+        // Throw ApiError — caller's auth observer handles redirect via useRouter
+        throw { type: 'error/unauthenticated', title: 'Session expired', status: 401, detail: '', traceId } satisfies ApiError
+      }
+      const body = await res.json().catch(() => ({}))
+      throw { type: body.type ?? 'error/unknown', title: body.title ?? 'An error occurred',
+              status: res.status, detail: body.detail ?? '', traceId: body.traceId ?? traceId } satisfies ApiError
+    }
+    return res.json()
   }
-  return res.json()
-}
 
-export const apiClient = {
-  get: <T>(path: string, token: string) => request<T>(path, { method: 'GET', token }),
-  post: <T>(path: string, body: unknown, token: string) =>
-    request<T>(path, { method: 'POST', body: JSON.stringify(body), token }),
-  put: <T>(path: string, body: unknown, token: string) =>
-    request<T>(path, { method: 'PUT', body: JSON.stringify(body), token }),
-  delete: <T>(path: string, token: string) => request<T>(path, { method: 'DELETE', token }),
+  return {
+    get: <T>(path: string) => request<T>(path),
+    post: <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+    put: <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
+    patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+    delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  }
 }
 ```
 
@@ -152,12 +169,15 @@ export interface DocumentRepository {
 ### Infrastructure Repository (implements domain)
 ```typescript
 // features/<feature>/infrastructure/repositories/DocumentRepositoryImpl.ts
+import type { ApiClient } from '@/core/api/client'
+
 export class DocumentRepositoryImpl implements DocumentRepository {
-  constructor(private readonly getToken: () => Promise<string>) {}
+  // Takes the ApiClient instance — already has AuthService injected at construction time
+  constructor(private readonly client: ApiClient) {}
 
   async findById(id: string): Promise<Document> {
-    const token = await this.getToken()
-    const data = await apiClient.get<DocumentApiModel>(`/v1/documents/${id}`, token)
+    // No token handling here — ApiClient handles it internally
+    const data = await this.client.get<DocumentApiModel>(`/v1/documents/${id}`)
     return documentFromApi(data)  // mapping function
   }
 }
@@ -169,15 +189,17 @@ export class DocumentRepositoryImpl implements DocumentRepository {
 // features/<feature>/application/hooks/useDocument.ts
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/core/auth/useAuth'
+import { createApiClient } from '@/core/api/client'
 
 export function useDocument(id: string) {
-  const { getToken } = useAuth()
+  const authService = useAuth()  // returns the AuthService (not just getToken)
 
   return useQuery({
     queryKey: ['documents', id],
     queryFn: async () => {
-      const token = await getToken()
-      const repo = new DocumentRepositoryImpl(() => getToken())
+      // ApiClient is created with the auth service — it owns token fetching internally
+      const client = createApiClient(authService)
+      const repo = new DocumentRepositoryImpl(client)
       return repo.findById(id)
     },
     enabled: !!id,
@@ -231,8 +253,9 @@ export function CreateDocumentForm({ onSuccess }: { onSuccess: () => void }) {
 
   const onSubmit = async (data: FormValues) => {
     try {
-      const token = await getToken()
-      await apiClient.post('/v1/documents', data, token)
+      const authService = useAuth()
+      const client = createApiClient(authService)
+      await client.post('/v1/documents', data)
       onSuccess()
     } catch (err) {
       if (isApiError(err) && err.fieldErrors) {

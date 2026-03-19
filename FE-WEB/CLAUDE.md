@@ -63,7 +63,7 @@ These are HARD blockers. Code violating any of these must not proceed.
 src/
 ├── core/                         # Shared utilities — never imports features
 │   ├── api/                      # ApiClient, Bearer token injection, 401 handling
-│   ├── auth/                     # Firebase client SDK wrapper, useAuth hook
+│   ├── auth/                     # AuthService interface + useAuth hook + provider implementations (core/auth/<provider>.ts)
 │   └── errors/                   # ApiError type, error mapping
 └── features/
     └── <feature>/

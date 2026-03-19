@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-spec-first.py\""
+            "command": "python \"$CLAUDE_PROJECT_DIR/hooks/enforce-spec-first.py\""
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-spec-first.py\""
+            "command": "python \"$CLAUDE_PROJECT_DIR/hooks/enforce-spec-first.py\""
           }
         ]
       },
@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/conventional-commits.py\""
+            "command": "python \"$CLAUDE_PROJECT_DIR/hooks/conventional-commits.py\""
           }
         ]
       }

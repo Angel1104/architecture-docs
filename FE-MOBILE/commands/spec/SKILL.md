@@ -38,20 +38,13 @@ The depth of what you produce is proportional to the CR. You decide how much eac
 Load all relevant context before writing anything:
 
 **Always:**
-- Read `.claude/references/unified_workflow.md`
-- Read `.claude/references/technical_defaults.md`
-- Read `.claude/references/hexagonal_architecture.md`
-- Read `.claude/references/tenant_isolation.md`
-
-**If Flutter or fullstack:**
-- Read `.claude/references/flutter_defaults.md`
-- Read `.claude/references/flutter_spec_template.md`
+- Read `references/flutter_defaults.md`
+- Read `references/flutter_spec_template.md`
 
 **Codebase scan:**
 - Scan `specs/cr/` for related or dependent specs
-- Scan `src/domain/models/` for existing entities this CR touches
-- Scan `src/domain/ports/` for existing ports this CR might reuse or extend
-- Scan `src/` or `lib/features/` for existing code related to this CR
+- Scan `lib/features/` for existing code related to this CR
+- Scan `lib/core/` for shared utilities this CR may depend on
 - Identify which existing acceptance criteria (if any) are affected
 
 ---
@@ -73,7 +66,7 @@ Before drafting, decide the depth of each spec section based on the CR item:
 
 A section that is not relevant to this CR should be marked `N/A — not applicable to this CR type` rather than left blank or padded with filler.
 
-Apply all technical defaults from `technical_defaults.md` without asking. Mark them `(default)`.
+Apply all technical defaults from `flutter_defaults.md` without asking. Mark them `(default)`.
 
 ---
 
@@ -99,7 +92,7 @@ Annotation conventions:
 | Status          | DRAFT |
 | Type            | <from CR item> |
 | Severity        | <from CR item> |
-| Bounded Context | <inferred> |
+| Feature         | <lib/features/<name>/> |
 
 ## Changelog
 | Date | Change | Author |
@@ -115,45 +108,53 @@ Annotation conventions:
 <what this spec explicitly does not cover>
 
 ## 2. Bounded Context
-- **Owns**: <entities and data>
-- **Depends on**: <other contexts>
-- **Publishes**: <domain events, if any>
+- **Feature folder**: `lib/features/<name>/`
+- **Entities owned**: <domain entities this feature owns>
+- **Depends on**: <other features or core services>
+- **Backend endpoints consumed**: <list API routes>
 
-## 3. Inbound Ports
-| Port Name | Type | Description | Auth Required | Roles Permitted | Read-RBAC |
-|-----------|------|-------------|---------------|-----------------|-----------|
+## 3. Screens & Entry Points
+| Screen | Route | Entry Point | Auth Required |
+|--------|-------|-------------|---------------|
 
-## 4. Outbound Ports
-| Port Name | Type | Description | Bridge/Gateway? |
-|-----------|------|-------------|-----------------|
+## 4. Backend API Dependencies
+| Endpoint | Method | Request | Response | Error Codes |
+|----------|--------|---------|----------|-------------|
 
-## 5. Adapter Contracts
+## 5. Controller & State Contracts
+| Controller | State Type | States | Actions |
+|------------|-----------|--------|---------|
 
-### Inbound Adapters
-| Port | Adapter | Protocol | Endpoint/Trigger | Request Schema | Response Schema |
-|------|---------|----------|------------------|----------------|-----------------|
+```dart
+// Sealed state — freezed
+@freezed
+class <Feature>State with _$<Feature>State {
+  const factory <Feature>State.initial() = _Initial;
+  const factory <Feature>State.loading() = _Loading;
+  const factory <Feature>State.loaded(<Entity> data) = _Loaded;
+  const factory <Feature>State.error(AppError error) = _Error;
+}
+```
 
-### Outbound Adapters
-| Port | Adapter | Technology | Gateway Concerns |
-|------|---------|------------|------------------|
-
-## 6. Tenant Isolation Strategy
-<apply defaults from tenant_isolation.md — mark (default)>
-<if N/A for this CR type, state why>
+## 6. Auth & User Context
+- **Auth state required**: `authenticated` (guard blocks `initializing` + `unauthenticated`)
+- **userId source**: `AuthService` → JWT → passed to all repository methods
+- **Token injection**: `AuthInterceptor` via `AuthService.getToken()` — (default)
+- **401 handling**: `AuthInterceptor` calls `AuthService.refreshToken()`, retries once; on failure calls `AuthService.logout()` — (default)
 
 ## 7. Acceptance Criteria
 - [ ] AC-1: GIVEN ... WHEN ... THEN ...
 
 ## 8. Error Scenarios
-| Error Condition | Domain Exception | HTTP | Retryable? | User Message |
-|-----------------|-----------------|------|------------|--------------|
+| Error Condition | AppError | User Message | Retryable? |
+|-----------------|----------|--------------|------------|
 
-## 9. Side Effects
-| Domain Event | Triggered By | Consumer | Sync/Async | Failure Policy |
-|--------------|-------------|----------|------------|----------------|
+## 9. Navigation & Side Effects
+| Trigger | Action | Notes |
+|---------|--------|-------|
 
 ## 10. Non-Functional Requirements
-<apply defaults — mark (default). Flag BUSINESS DECISION REQUIRED where needed>
+<apply defaults from flutter_defaults.md — mark (default). Flag BUSINESS DECISION REQUIRED where needed>
 ```
 
 ---
@@ -169,16 +170,18 @@ Once the draft is complete, review it through three lenses. Run these in paralle
 - Is anything ambiguous or open to interpretation?
 
 **Software Architect lens:**
-- Are ports defined as interfaces, not implementations?
-- Does the dependency direction comply with hexagonal architecture?
-- Are there boundary violations or missing ports?
-- Is the bounded context correctly scoped?
+- Do screens/routes map cleanly to a feature folder in Clean Architecture?
+- Are domain entities pure Dart — no Flutter SDK, Dio, or auth SDK imports?
+- Are repository interfaces abstract (domain layer) with concrete implementations in data/?
+- Does the dependency direction comply: `domain/ → nothing`, `data/ → domain/`, `presentation/ → domain/`?
+- Is the controller state sealed with `AppError` in the error variant?
 
 **Security lens:**
-- Is tenant isolation addressed for every data access path?
-- Are all write endpoints authenticated?
-- Are there injection risks or unvalidated inputs?
-- Does the CR introduce any cross-tenant risk?
+- Is every data access scoped to `userId` from the authenticated user?
+- Does the GoRouter guard block `initializing` + `unauthenticated` states for all new routes?
+- Are tokens managed by `AuthService` — never stored manually?
+- Are there input validation gaps at the data layer boundary?
+- Does the CR introduce any cross-user data access risk?
 
 Consolidate findings. Classify each as:
 - `BLOCKER` — must be resolved before approval

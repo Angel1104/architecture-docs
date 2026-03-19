@@ -58,12 +58,21 @@ Any match is **CRITICAL** — client-provided tenant_id allows tenant impersonat
 Every query to a multi-tenant table must run inside `prisma.withTenant()`:
 
 ```bash
-# Detect raw Prisma calls on multi-tenant tables outside withTenant
-# Check infrastructure/adapters/ — withTenant should wrap all tenant-scoped queries
-grep -rn "prisma\." src/modules/*/infrastructure/ | grep -v "withTenant\|$transaction"
+# Detect raw Prisma calls anywhere in modules outside withTenant
+# Covers infrastructure/ AND interface/controllers/ — both must be checked
+grep -rn "this\.prisma\." src/modules/ | grep -v "withTenant\|$transaction"
 ```
 
 Raw queries outside RLS context on tenant tables are **CRITICAL**.
+
+Also verify that controllers do NOT import `PrismaService` directly — `withTenant()` belongs in the repository layer:
+
+```bash
+# Controllers must never import PrismaService
+grep -rn "PrismaService" src/modules/*/interface/controllers/
+```
+
+Any match is **CRITICAL** — controller-level `withTenant()` bypasses the repository abstraction and is an architecture + RLS boundary violation.
 
 ### 5. Secrets — Never in Code
 

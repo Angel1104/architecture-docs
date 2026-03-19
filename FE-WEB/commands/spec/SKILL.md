@@ -129,7 +129,7 @@ Once the draft is complete, review it through three lenses in parallel:
 **Software Architect lens:**
 - Are Server vs Client Component decisions present and justified?
 - Are feature layer dependencies correctly specified?
-- Is the Firebase client SDK confined to `'use client'` contexts?
+- Is the auth provider SDK confined to `'use client'` components and `src/core/auth/` — never imported directly in feature code?
 - Is the ApiClient used for all external calls?
 
 **Security lens:**

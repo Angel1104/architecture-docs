@@ -38,20 +38,14 @@ The depth of what you produce is proportional to the CR. You decide how much eac
 Load all relevant context before writing anything:
 
 **Always:**
-- Read `.claude/references/unified_workflow.md`
-- Read `.claude/references/technical_defaults.md`
-- Read `.claude/references/hexagonal_architecture.md`
-- Read `.claude/references/tenant_isolation.md`
-
-**If Flutter or fullstack:**
-- Read `.claude/references/flutter_defaults.md`
-- Read `.claude/references/flutter_spec_template.md`
+- Read `references/technical_defaults.md`
+- Read `references/spec_template.md`
 
 **Codebase scan:**
 - Scan `specs/cr/` for related or dependent specs
 - Scan `src/domain/models/` for existing entities this CR touches
 - Scan `src/domain/ports/` for existing ports this CR might reuse or extend
-- Scan `src/` or `lib/features/` for existing code related to this CR
+- Scan `src/` for existing code related to this CR
 - Identify which existing acceptance criteria (if any) are affected
 
 ---
@@ -203,6 +197,20 @@ Repeat review → revise until no blockers remain.
 ---
 
 ## Phase 6: Approve and Handoff
+
+**STOP — Spec approval required.**
+
+Present the complete spec, then ask:
+> "Spec ready for CR-<cr-id>. Before you confirm, check:
+> - [ ] Read §7 Acceptance Criteria — tell me which AC covers the **tenant isolation path** (or confirm this feature is not tenant-scoped)
+> - [ ] Confirm Out-of-Scope section matches your intent — nothing missing, nothing over-engineered
+> - [ ] Check §8 Error Scenarios — do these cover your real failure modes?
+> - [ ] §6.5 Security Defaults fully populated — no TBD values
+> - [ ] No open business questions remain
+>
+> Reply with the AC reference (e.g., "AC-3 covers tenant isolation") and **'approved'** to proceed, or tell me what to change."
+
+Wait. Apply any corrections. Re-present if changed.
 
 Update the spec status to `APPROVED`. Update the CR item changelog.
 

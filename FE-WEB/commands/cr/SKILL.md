@@ -81,11 +81,12 @@ All other decisions are made automatically.
 5. Resolve all blockers autonomously
 6. **STOP — Spec approval required.**
    Present the complete spec, then ask:
-   > "Spec ready for CR-<cr-id>. Before you confirm, check:
-   > - [ ] Acceptance criteria match your intent exactly — not vague, not missing cases
-   > - [ ] Out-of-scope section is correct — nothing over-engineered, nothing missing
-   > - [ ] Error scenarios cover your real edge cases
-   > - [ ] No open business questions remain
+   > "Spec ready for CR-<cr-id>. Before confirming, I need you to read these specifically:
+   >
+   > - [ ] Read §7 Acceptance Criteria — tell me which AC covers the **unauthenticated user path** (or confirm there isn't one and it's intentional)
+   > - [ ] Confirm the Out-of-Scope section is correct — nothing over-engineered, nothing missing
+   > - [ ] Check §8 Error Scenarios — do these cover your real failure modes?
+   > - [ ] Any open business questions remaining?
    >
    > Reply **'approved'** to proceed, or tell me what to change."
 

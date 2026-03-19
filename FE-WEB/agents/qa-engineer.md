@@ -308,7 +308,7 @@ describe('<FeatureForm />', () => {
 
 For every feature, additionally verify:
 - [ ] Form submission while unauthenticated redirects to login
-- [ ] Expired Firebase token triggers refresh and retries the request
+- [ ] Expired token triggers `AuthService.refreshToken()` and retries the request once
 - [ ] 403 response shows an in-screen permission error (not a redirect)
 - [ ] 500 response shows a generic user-friendly error (not a stack trace)
 - [ ] Network offline shows a connectivity error message

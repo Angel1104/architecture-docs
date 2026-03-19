@@ -53,10 +53,10 @@ Then continue with these questions, in order, each waiting for a reply:
 **4. Scope negativo** — after the feature list:
 > "What is this app explicitly NOT going to do in v1? I want to draw the boundary now."
 
-**5. Firebase** — after scope:
-> "Is a Firebase project already configured? If yes, what's the project ID?"
+**5. Auth provider** — after scope:
+> "What auth provider will this app use? Common choices: Firebase Auth, Auth0, custom JWT backend, or something else. If it's not decided yet, just say so."
 
-**6. Backend** — after Firebase:
+**6. Backend** — after auth provider:
 > "What's the backend URL? If it's not ready yet, I'll leave it as a placeholder."
 
 **7. Push notifications** — after backend:
@@ -80,7 +80,7 @@ Once you have all nine answers, silently compose what you know:
 - 2–3 sentence product description
 - Explicit scope — what it does NOT do
 - Feature list for v1 (these become folder names, normalized to snake_case)
-- Firebase: configured yes/no + project ID if yes
+- Auth provider: which one, or TBD
 - Backend URL or placeholder
 - Push notifications: yes/no
 - Camera/gallery: yes/no
@@ -88,7 +88,7 @@ Once you have all nine answers, silently compose what you know:
 
 Then present a brief summary and ask for confirmation before writing anything:
 
-> "Here's what I've got — [app name]: [one sentence description]. v1 features: [list]. Out of scope: [summary]. Firebase: [status]. Backend: [url or TBD]. Push notifications: [yes/no]. Camera: [yes/no]. Offline: [online-first / needs offline for X].
+> "Here's what I've got — [app name]: [one sentence description]. v1 features: [list]. Out of scope: [summary]. Auth provider: [chosen provider or TBD]. Backend: [url or TBD]. Push notifications: [yes/no]. Camera: [yes/no]. Offline: [online-first / needs offline for X].
 >
 > Does that look right? Any corrections before I set everything up?"
 
@@ -123,9 +123,9 @@ Once confirmed, get the current date with `date` and write `specs/project.md`:
 ## Servicios externos configurados
 | Servicio | Uso | Configurado |
 |----------|-----|-------------|
-| Firebase Auth | Autenticación de usuarios (JWT) | <Sí — project ID: X / Pendiente> |
+| Auth Provider | Autenticación de usuarios — implementa `AuthService` | <Proveedor elegido o Pendiente> |
 | Backend API | API REST (Dio) | <URL o Pendiente> |
-| Firebase Cloud Messaging | Push notifications | <Sí / No en scope> |
+| Push notifications | Notificaciones push | <Sí / No en scope> |
 | Camera / Gallery | Captura de imágenes | <Sí / No en scope> |
 
 ## Decisiones tomadas en este proyecto
@@ -169,14 +169,17 @@ For each feature listed in v1, create (using snake_case):
 ```
 lib/features/<feature_name>/domain/entities/
 lib/features/<feature_name>/domain/repositories/
-lib/features/<feature_name>/domain/use_cases/
-lib/features/<feature_name>/application/
-lib/features/<feature_name>/infrastructure/repositories/
-lib/features/<feature_name>/infrastructure/models/
-lib/features/<feature_name>/infrastructure/data_sources/
+lib/features/<feature_name>/domain/usecases/
+lib/features/<feature_name>/data/datasources/
+lib/features/<feature_name>/data/models/
+lib/features/<feature_name>/data/repositories/
+lib/features/<feature_name>/presentation/controllers/
 lib/features/<feature_name>/presentation/screens/
 lib/features/<feature_name>/presentation/widgets/
-lib/features/<feature_name>/presentation/router/
+test/features/<feature_name>/domain/
+test/features/<feature_name>/data/
+test/features/<feature_name>/presentation/controllers/
+test/features/<feature_name>/fakes/
 ```
 
 ### Files
@@ -190,7 +193,6 @@ lib/features/<feature_name>/presentation/router/
 
 class AppConfig {
   static const apiUrl = String.fromEnvironment('API_URL');
-  static const firebaseProjectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
   static const appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'development');
 
   static bool get isProduction => appEnv == 'production';
@@ -198,18 +200,20 @@ class AppConfig {
 }
 ```
 
-**`lib/main.dart`** — minimal main with Firebase init:
+**`lib/main.dart`** — minimal main (auth-provider-agnostic):
 
 ```dart
 // lib/main.dart
+// Auth provider initialization goes in app/bootstrap/bootstrap.dart
+// This file stays minimal — only Flutter binding + runApp.
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'app/bootstrap/bootstrap.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  // TODO: Initialize your chosen auth provider here
+  // e.g. await Firebase.initializeApp(); for Firebase Auth
   runApp(const AppBootstrap());
 }
 ```
@@ -248,20 +252,26 @@ class AppBootstrap extends StatelessWidget {
 # Usage:
 #   flutter run \
 #     --dart-define=API_URL=https://api.example.com \
-#     --dart-define=FIREBASE_PROJECT_ID=my-project-id \
 #     --dart-define=APP_ENV=development
 #
 # For CI/CD: pass these as build arguments to your pipeline.
 
-# ── Required ────────────────────────────────────────────────────────────────
-API_URL=                    # Base URL of the NestJS backend
-FIREBASE_PROJECT_ID=        # Firebase project ID
+# ── Always required ──────────────────────────────────────────────────────────
+API_URL=                    # Base URL of the backend API
 APP_ENV=development         # production / staging / development
 
-# ── Platform config (not dart-define — managed per-environment) ─────────────
-# google-services.json        → android/app/
-# GoogleService-Info.plist    → ios/Runner/
-# Use separate files per environment. Never commit production values.
+# ── Auth provider config (add entries for your chosen provider) ──────────────
+# Firebase Auth example:
+#   FIREBASE_PROJECT_ID=my-project-id
+#   Platform files: google-services.json → android/app/, GoogleService-Info.plist → ios/Runner/
+#
+# Auth0 example:
+#   AUTH0_DOMAIN=my-tenant.auth0.com
+#   AUTH0_CLIENT_ID=...
+#
+# Custom JWT: no additional config needed — handled by backend.
+#
+# Use separate config files per environment. Never commit production values.
 ```
 
 ---
@@ -278,13 +288,15 @@ Tell the developer what was done and what comes next:
 > - `lib/ui/` — primitives, components, layouts scaffolded
 > - `lib/theme/` — tokens, components, utils scaffolded
 > - `lib/app/` — router, providers, bootstrap scaffolded
-> - `lib/features/<feature>/` — empty clean architecture folders for each v1 feature
-> - `lib/main.dart` — minimal entrypoint with Firebase init
+> - `lib/features/<feature>/` — domain/, data/, presentation/ for each v1 feature
+> - `test/features/<feature>/` — domain/, data/, controllers/, fakes/ for each v1 feature
+> - `lib/main.dart` — minimal entrypoint (auth-provider-agnostic)
 > - `.env.example` — dart-define variables to pass at build time
 >
-> Before your first feature:
-> - Add `google-services.json` (Android) and `GoogleService-Info.plist` (iOS) for your Firebase project
+> Next steps:
+> - Install and initialize your chosen auth provider (see `.env.example` for examples)
+> - Add the `AuthService` implementation in `lib/core/auth/` for your provider
 > - Run `flutter pub get` to install dependencies
-> - Confirm `API_URL` and `FIREBASE_PROJECT_ID` values for your environment
+> - Confirm `API_URL` and `APP_ENV` values for your environment
 >
 > When you're ready to build: run `/intake <description of your first feature>` to start the process.

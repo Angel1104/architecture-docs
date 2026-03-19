@@ -60,7 +60,8 @@ Every UI surface this feature introduces or modifies. For each:
 
 ```typescript
 // middleware.ts or app/(dashboard)/layout.tsx
-// Check Firebase session — redirect if not authenticated
+// Check auth session — redirect unauthenticated users to /auth/login
+// During 'initializing' auth state: show loading skeleton, never redirect
 ```
 
 ---
@@ -115,9 +116,9 @@ type CreateNameInput = {
 // features/<name>/store/useNameStore.ts
 type NameState = {
   selectedId: string | null
-  formDraft: Partial<CreateNameInput> | null  // for 401 form preservation if needed
+  // formDraft: Partial<CreateNameInput> | null  — ONLY add if §6 Auth Perspective explicitly
+  //   specifies "preserve form state on 401". Do not add by default.
   setSelectedId: (id: string | null) => void
-  setFormDraft: (draft: Partial<CreateNameInput> | null) => void
 }
 ```
 

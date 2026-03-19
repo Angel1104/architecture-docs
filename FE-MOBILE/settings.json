@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "dart \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-spec-first.dart\""
+            "command": "dart \"$CLAUDE_PROJECT_DIR/hooks/enforce-spec-first.dart\""
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "dart \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-spec-first.dart\""
+            "command": "dart \"$CLAUDE_PROJECT_DIR/hooks/enforce-spec-first.dart\""
           }
         ]
       }

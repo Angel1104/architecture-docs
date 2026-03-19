@@ -142,8 +142,8 @@ If CR type is `feature`, update `specs/project.md`:
 2. Find the `## Feature Map` section
 3. For the feature that was built, update or add a row:
 
-| Feature | Archivos clave | Hooks/Componentes principales | Endpoints que consume |
-|---------|---------------|-------------------------------|----------------------|
+| Feature | Key files | Primary hooks / components | Endpoints consumed |
+|---------|-----------|---------------------------|-------------------|
 | `<feature-name>` | `src/features/<name>/domain/entities/<Entity>.ts`, `src/features/<name>/infrastructure/repositories/<Name>Repository.ts`, `src/features/<name>/application/hooks/use<Name>.ts`, `src/features/<name>/presentation/pages/<Name>Page.tsx` | `use<Name>`, `<Name>Page` | `GET /v1/<name>`, `POST /v1/<name>` |
 
 Fill in actual file paths and hook names from the implementation just completed.

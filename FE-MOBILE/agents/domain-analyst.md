@@ -33,19 +33,18 @@ When asked to review a spec, work through these phases:
 
 ### Phase 1: Structural Completeness
 
-Verify ALL required sections are present:
+Verify ALL required sections are present for the spec type (feature = all 10; change/refactor = §1, §7, §8 only):
 
 1. **Problem Statement** — What problem does this solve? For whom? What is out of scope?
-2. **Bounded Context** — Which domain? What entities are owned? What is published?
-3. **Inbound Ports** — Operations exposed. Auth required. Roles permitted. Read-RBAC.
-4. **Outbound Ports** — External dependencies. Port method signatures with `tenant_uid`.
-5. **Adapter Contracts** — Concrete implementations. Request/response schemas. Operation ordering for multi-step commands.
-6. **Tenant Isolation Strategy** — JWT validation details. Idempotency scoping. Data scoping.
+2. **Bounded Context** — Which feature folder? What entities are owned? What does it depend on?
+3. **Screens & Entry Points** — Which screens? Which routes? Auth required for each?
+4. **Backend API Dependencies** — Which endpoints are consumed? Request/response shapes? Error codes?
+5. **Controller & State Contracts** — Which StateNotifier/AsyncNotifier? Sealed state with `AppError` in error variant?
+6. **Auth & User Context** — Auth state required (`authenticated`)? `userId` source? Token injection via `AuthService`?
 7. **Acceptance Criteria** — GIVEN/WHEN/THEN. Testable. Specific.
-8. **Error Scenarios** — §8.1 Auth failures (5 mandatory rows). §8.2 Domain errors with domain exceptions (not HTTP codes).
-9. **Side Effects** — Domain events. Sync/async designation. Retry/DLQ policy per consumer.
+8. **Error Scenarios** — `AppError` variants used (not raw strings). User-visible messages specified.
+9. **Navigation & Side Effects** — What happens after each action? Route transitions? Side effects (notifications, etc.)?
 10. **Non-Functional Requirements** — No "TBD" or "BUSINESS DECISION REQUIRED" remaining.
-11. **§6.5 Security Defaults** — Rate limit fallback, JWT expiry, read-RBAC summary, operation ordering.
 
 Flag any missing section as **BLOCKER**.
 
@@ -72,10 +71,11 @@ Flag untestable criteria as **BLOCKER**.
 
 ### Phase 4: Architecture Alignment (quick check)
 
-- Does the spec respect hexagonal boundaries?
-- Are ports defined as interfaces, not implementations?
-- Are side effects modeled as events, not direct calls?
-- Is tenant_uid present in every data access path?
+- Does the spec respect Clean Architecture boundaries (`domain/ → nothing`, `data/ → domain/`, `presentation/ → domain/`)?
+- Are repository interfaces abstract (domain layer) with implementations in `data/`?
+- Is controller state sealed with `AppError` — not raw strings or `Exception`?
+- Is `userId` passed to every repository method that accesses user data?
+- Is auth handled through `AuthService` — not direct auth SDK calls in domain or use cases?
 
 Flag violations as **WARNING**.
 
@@ -99,7 +99,7 @@ Flag violations as **WARNING**.
 - **[NOTE]** <observation>
 
 ### Checklist Score
-- Structural completeness: X/11 sections
+- Structural completeness: X/10 sections
 - Ambiguity issues: X found
 - Testability: X/Y criteria are testable
 - Architecture alignment: PASS / REVIEW

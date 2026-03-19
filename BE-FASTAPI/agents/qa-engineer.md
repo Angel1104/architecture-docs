@@ -36,10 +36,10 @@ tests/
 ├── unit/
 │   ├── domain/
 │   │   ├── test_<feature>_models.py    # Entity/VO validation, business rules, state machine
-│   │   └── test_<feature>_services.py  # Domain service logic (mocked ports)
+│   │   └── test_<feature>_services.py  # Domain service logic (fake port implementations)
 │   └── application/
-│       ├── test_<feature>_commands.py  # Use case tests (mocked ports)
-│       └── test_<feature>_queries.py   # Query tests (mocked ports)
+│       ├── test_<feature>_commands.py  # Use case tests (fake port implementations)
+│       └── test_<feature>_queries.py   # Query tests (fake port implementations)
 ├── integration/
 │   └── test_<feature>_adapters.py      # Adapter tests (real DB, fake externals)
 └── e2e/
@@ -58,6 +58,29 @@ def test_<action>_<condition>_<expected_result>():
 ## Test Generation Process
 
 ### Step 1: Shared Fixtures (conftest.py)
+
+**FakeEventBus — required for any test that verifies side effects:**
+```python
+# tests/fakes/fake_event_bus.py
+from src.domain.ports.event_bus import EventBus
+from src.domain.events import DomainEvent
+
+class FakeEventBus(EventBus):
+    def __init__(self):
+        self.published: list[DomainEvent] = []
+
+    async def publish(self, event: DomainEvent) -> None:
+        self.published.append(event)
+
+    # Test helpers
+    def clear(self) -> None:
+        self.published = []
+
+    def of_type(self, event_type: type) -> list[DomainEvent]:
+        return [e for e in self.published if isinstance(e, event_type)]
+```
+
+**conftest.py fixtures:**
 ```python
 @pytest.fixture
 def tenant_uid() -> str:
@@ -70,6 +93,10 @@ def other_tenant_uid() -> str:
 @pytest.fixture
 def fake_<port>() -> Fake<Port>:
     return Fake<Port>()  # In-memory implementation
+
+@pytest.fixture
+def fake_event_bus() -> FakeEventBus:
+    return FakeEventBus()
 
 @pytest.fixture
 async def app_client(fake_repos, fake_event_bus) -> AsyncClient:

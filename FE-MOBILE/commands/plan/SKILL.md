@@ -36,15 +36,13 @@ You are responsible for translating an approved spec into a concrete implementat
 
 1. Read the full approved spec `specs/cr/<cr-id>.spec.md`
 2. Read the full CR item `specs/cr/<cr-id>.cr.md`
-3. Read `.claude/references/hexagonal_architecture.md`
-4. Read `.claude/references/technical_defaults.md`
-5. Read `.claude/references/tenant_isolation.md`
-6. Scan existing code for patterns this CR extends or reuses:
-   - `src/domain/` — existing models, ports, services
-   - `src/application/` — existing commands and queries
-   - `src/adapters/` — existing adapters to reuse or extend
-   - `tests/` — existing test patterns to follow
-7. Identify: is this CR extending an established pattern, or introducing something new?
+3. Read `references/flutter_defaults.md`
+4. Scan existing code for patterns this CR extends or reuses:
+   - `lib/features/<feature>/domain/` — existing entities, repository interfaces, use cases
+   - `lib/features/<feature>/data/` — existing repository implementations, models, datasources
+   - `lib/features/<feature>/presentation/` — existing controllers and screens
+   - `test/features/<feature>/` — existing test patterns to follow
+5. Identify: is this CR extending an established pattern, or introducing something new?
 
 ---
 
@@ -160,27 +158,27 @@ Write `specs/cr/plans/<cr-id>.plan.md`:
 
 Layer by layer, inside-out:
 
-### 1. Domain Layer (`src/domain/`)
-- [ ] [specific file or class to create/modify]
-- [ ] [exact change — add model field, new port method, new exception]
+### 1. Domain Layer (`lib/features/<feature>/domain/`)
+- [ ] [entity or value object to create/modify — `domain/entities/`]
+- [ ] [repository interface to add/extend — `domain/repositories/`]
+- [ ] [use case to create — `domain/usecases/`]
 
-### 2. Application Layer (`src/application/`)
-- [ ] [command or query handler to create/modify]
-- [ ] [exact change]
+### 2. Use Cases & Controllers (`domain/usecases/` + `presentation/controllers/`)
+- [ ] [use case implementation — single-responsibility, one per user action]
+- [ ] [StateNotifier/AsyncNotifier controller with sealed @freezed state]
 
-### 3. Adapters — Outbound (`src/adapters/outbound/`)
-- [ ] [repository, gateway, or publisher to create/modify]
-- [ ] [exact change]
+### 3. Data Layer (`lib/features/<feature>/data/`)
+- [ ] [JSON model to create — `data/models/`]
+- [ ] [datasource to create/modify — `data/datasources/`]
+- [ ] [repository implementation — `data/repositories/`]
 
-### 4. Adapters — Inbound (`src/adapters/inbound/`)
-- [ ] [router, middleware, or event handler to create/modify]
-- [ ] [exact change]
+### 4. Presentation Layer (`lib/features/<feature>/presentation/`)
+- [ ] [screen to create/modify — `presentation/screens/`]
+- [ ] [feature-specific widgets — `presentation/widgets/`]
+- [ ] [new route to register in `app/router/app_router.dart`]
 
-### 5. Config (`src/config/`)
-- [ ] [DI wiring changes if needed]
-
-### 6. Database / Migrations
-- [ ] [schema changes, if any]
+### 5. Providers (`lib/app/providers/app_providers.dart`)
+- [ ] [new Riverpod providers to register]
 
 ## Risk Notes
 <any risks identified during planning, and how they are mitigated>
@@ -297,7 +295,7 @@ Update `specs/cr/<cr-id>.cr.md`:
 Status: SPECCED → PLANNED
 Changelog: | <today> | Plan confirmed, option [X] selected | |
 Artifacts: Plan: `specs/cr/plans/<cr-id>.plan.md` ✓
-           Tests: `tests/<cr-id>/` ✓
+           Tests: `test/features/<feature>/` ✓
 ```
 
 Tell the developer:

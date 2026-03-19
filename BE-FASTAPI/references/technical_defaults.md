@@ -1,6 +1,6 @@
 # Technical Defaults — comocom Technical Constitution
 
-This document codifies every technical decision that applies to ALL comocom features. Both `/spec-init` and `/spec-revise` MUST read this file before writing or revising any spec. Defaults here are **not open questions** — they are settled decisions.
+This document codifies every technical decision that applies to all FastAPI features. Every command in this kit reads this file before writing or revising any spec. Defaults here are **not open questions** — they are settled decisions.
 
 A default may only be overridden with an explicit, documented business reason recorded in the spec's Problem Statement or a dedicated "Architecture Decision" note.
 
@@ -12,12 +12,12 @@ A default may only be overridden with an explicit, documented business reason re
 |---|------|--------|
 | 1 | Domain: pure Python | No FastAPI, no SQLAlchemy, no boto3 in `app/domain/`. Zero external dependencies. |
 | 2 | OIDC only | Every endpoint validates GCP OIDC token — no Firebase, no API keys for auth |
-| 3 | `tenant_id` from OIDC context | Never from request body or query params — comes from the validated OIDC token claims |
+| 3 | `tenant_uid` from OIDC context | Never from request body or query params — comes from the `tenant_uid` claim in the validated OIDC token |
 | 4 | Cloud Tasks for side effects | Direct calls to notification/webhook/email services from application layer are forbidden — always dispatch a Cloud Task |
 | 5 | Fake adapters for unit tests | `FakeDocumentRepository(IDocumentRepository)` — never mock SQLAlchemy or boto3 sessions directly |
 | 6 | RFC 7807 errors at adapter boundary | Domain exceptions map to `type/title/status/detail/traceId` — never expose raw Python exceptions |
 | 7 | Pydantic at inbound boundary | ALL external input validated via Pydantic models at the inbound adapter — never inside domain or application layers |
-| 8 | Cursor pagination only | Never offset/skip — always `cursor + limit`, return `{data, next_cursor, has_more}` |
+| 8 | Offset pagination | `page` (1-indexed) + `page_size`, return `{ items, total, page, page_size }` — see §3 for full defaults |
 | 9 | Expand/contract migrations | Never destructive schema changes in the same deploy as code removal — always two deploys |
 | 10 | RS256 JWT | `alg:none` explicitly rejected at the adapter boundary — fail fast, never silently accept |
 
@@ -27,7 +27,7 @@ A default may only be overridden with an explicit, documented business reason re
 
 ## How Agents Must Use This Document
 
-When `/spec-init` Phase 3 or `/spec-revise` Phase 2 encounters any decision listed below, apply the default and annotate it with `(default)`. Do **NOT** ask the user. Do **NOT** leave it as TBD.
+When `/spec` Phase 3 encounters any decision listed below, apply the default and annotate it with `(default)`. Do **NOT** ask the user. Do **NOT** leave it as TBD.
 
 Ask the user **only** for:
 - Which roles exist and what each can/cannot do (authorization model)

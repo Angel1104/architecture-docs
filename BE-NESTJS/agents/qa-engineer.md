@@ -54,9 +54,10 @@ src/modules/<name>/
 ## Fake Repository Pattern
 
 ```typescript
-// test/fakes/FakeNameRepository.ts
-import { INameRepository } from '@/modules/name/domain/ports/INameRepository'
-import { Name } from '@/modules/name/domain/entities/Name'
+// src/modules/<name>/application/__fakes__/FakeNameRepository.ts
+import { INameRepository } from '../../domain/ports/INameRepository'
+import { Name } from '../../domain/entities/Name'
+import { PaginatedResponse, PaginationParams } from '@/shared/interface/pagination.types'
 
 export class FakeNameRepository implements INameRepository {
   private store: Map<string, Name> = new Map()
@@ -65,8 +66,16 @@ export class FakeNameRepository implements INameRepository {
     return this.store.get(id) ?? null
   }
 
-  async findByTenant(tenantId: string): Promise<Name[]> {
-    return [...this.store.values()].filter(n => n.tenantId === tenantId)
+  async findByTenant(params: PaginationParams): Promise<PaginatedResponse<Name>> {
+    const all = [...this.store.values()].filter(n => n.tenantId === params.tenantId)
+    const limit = params.limit ?? 20
+    const startIdx = params.cursor
+      ? all.findIndex(n => n.id === params.cursor) + 1
+      : 0
+    const slice = all.slice(startIdx, startIdx + limit + 1)
+    const hasMore = slice.length > limit
+    const data = hasMore ? slice.slice(0, -1) : slice
+    return { data, nextCursor: hasMore ? data[data.length - 1].id : null, hasMore }
   }
 
   async save(name: Name): Promise<void> {
@@ -77,7 +86,11 @@ export class FakeNameRepository implements INameRepository {
     this.store.delete(id)
   }
 
-  // Test helper
+  async existsByValue(tenantId: string, value: string): Promise<boolean> {
+    return [...this.store.values()].some(n => n.tenantId === tenantId && n.value === value)
+  }
+
+  // Test helpers
   seed(names: Name[]): void {
     names.forEach(n => this.store.set(n.id, n))
   }
@@ -105,18 +118,18 @@ describe('CreateNameUseCase', () => {
 
   it('creates a name for the authenticated tenant', async () => {
     const result = await useCase.execute({
-      name: 'Alice',
+      value: 'Alice',
       tenantId: 'tenant-1',
       userId: 'user-1',
     })
-    expect(result.name).toBe('Alice')
+    expect(result.value).toBe('Alice')
     expect(fakeRepo.all()).toHaveLength(1)
   })
 
   it('throws NameAlreadyExistsError when duplicate name in same tenant', async () => {
-    fakeRepo.seed([buildName({ name: 'Alice', tenantId: 'tenant-1' })])
+    fakeRepo.seed([buildName({ value: 'Alice', tenantId: 'tenant-1' })])
     await expect(
-      useCase.execute({ name: 'Alice', tenantId: 'tenant-1', userId: 'user-1' })
+      useCase.execute({ value: 'Alice', tenantId: 'tenant-1', userId: 'user-1' })
     ).rejects.toThrow(NameAlreadyExistsError)
   })
 })
@@ -137,7 +150,7 @@ describe('POST /v1/names', () => {
     const module = await Test.createTestingModule({
       imports: [NameModule],
     })
-      .overrideProvider(INameRepository)
+      .overrideProvider(I_NAME_REPOSITORY)
       .useValue(fakeRepo)
       .overrideGuard(FirebaseAuthGuard)
       .useValue({ canActivate: (ctx) => {
@@ -152,18 +165,18 @@ describe('POST /v1/names', () => {
   it('returns 201 with the created name', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/names')
-      .send({ name: 'Alice' })
+      .send({ value: 'Alice' })
       .expect(201)
-    expect(res.body.name).toBe('Alice')
+    expect(res.body.value).toBe('Alice')
   })
 
-  it('returns 422 with fieldErrors when name is empty', async () => {
+  it('returns 422 with fieldErrors when value is empty', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/names')
-      .send({ name: '' })
+      .send({ value: '' })
       .expect(422)
     expect(res.body.fieldErrors).toBeDefined()
-    expect(res.body.fieldErrors[0].field).toBe('name')
+    expect(res.body.fieldErrors[0].field).toBe('value')
   })
 
   it('returns 401 when no auth token', async () => {

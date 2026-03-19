@@ -10,10 +10,10 @@
 | # | Rule | Detail |
 |---|------|--------|
 | 1 | AuthService abstraction | Feature code never imports auth SDK directly. Only `core/auth/` touches the auth provider SDK. |
-| 2 | 3-state auth | `initializing / authenticated / unauthenticated` — route guards must handle all 3, never redirect during `initializing` |
+| 2 | 3-state auth | `initializing / authenticated / unauthenticated` — route guards must handle all 3; **never redirect during `initializing`** — show loading state instead |
 | 3 | Domain layer: pure TypeScript | No React, no Next.js, no auth SDK, no `fetch` in `domain/`. Zero framework dependencies. |
 | 4 | `'use client'` only when needed | Add only for: event handlers, useState/useEffect, AuthService calls, browser APIs. Default is Server Component. |
-| 5 | ApiClient for all HTTP | No raw `fetch()` in hooks or components. All calls go through `ApiClient`. |
+| 5 | ApiClient for all HTTP | `createApiClient(auth: AuthService)` — token injected at construction, **never passed per call**. No raw `fetch()` in hooks or components. |
 | 6 | ApiError for all errors | All errors typed as `ApiError` (RFC 7807). Never catch and render raw `Error.message`. |
 | 7 | Forms: react-hook-form + Zod | Map 422 `fieldErrors` from backend to form fields. Never use uncontrolled inputs or manual validation. |
 | 8 | State separation | Zustand for global client state — TanStack Query for server state. Never use Zustand to cache server data. |
@@ -49,7 +49,7 @@ Shared, cross-feature code lives in:
 ```
 src/core/
 ├── api/                  # ApiClient, Bearer token, X-Trace-ID, 401 handling
-├── auth/                 # Firebase client SDK wrapper, useAuth hook
+├── auth/                 # AuthService interface + useAuth hook + provider implementations (auth/<provider>.ts)
 └── errors/               # ApiError type, isApiError, error mapping
 
 src/components/
@@ -83,7 +83,7 @@ core/            → external packages only (never imports features)
 | React hooks (`useState`, `useEffect`, `useRef`) | Any interactive component |
 | Event handlers (`onClick`, `onChange`, `onSubmit`) | Buttons, form inputs |
 | Browser APIs (`localStorage`, `window`, DOM) | Clipboard, scroll, resize |
-| Firebase client SDK | `useAuth`, `getIdToken`, `onAuthStateChanged` |
+| Auth provider SDK calls (via `useAuth`) | `getToken`, `onAuthStateChanged` — only through `AuthService` |
 | TanStack Query hooks | `useQuery`, `useMutation` |
 | Zustand store reads | `useUserStore` |
 
@@ -168,8 +168,10 @@ export function createApiClient(auth: AuthService) {
         const freshToken = await auth.refreshToken()
         if (freshToken) return request<T>(path, options, true)
         await auth.logout()
-        window.location.href = '/auth/login'
-        throw new Error('Unauthenticated')
+        // Delegate redirect to the caller — ApiClient must not import Next.js router
+        // The caller (hook or context) handles the redirect using useRouter().push('/auth/login')
+        // or middleware.ts. Never call window.location.href here — breaks Server Components.
+        throw { type: 'error/unauthenticated', title: 'Session expired', status: 401, detail: '', traceId } satisfies ApiError
       }
       const body = await res.json().catch(() => ({}))
       throw {
@@ -203,6 +205,7 @@ export function createApiClient(auth: AuthService) {
 - Never manually attach `Authorization` in a feature
 - Never import an auth SDK directly in `client.ts` — always through the `AuthService` interface
 - Every API call goes through `apiClient.get/post/put/patch/delete`
+- Never call `window.location.href` inside `client.ts` — it breaks Server Components and SSR. On final 401, throw `ApiError` with `status: 401`; the calling hook or an auth context observer handles the redirect via `useRouter().push('/auth/login')`
 
 ---
 

@@ -82,12 +82,12 @@ All other decisions are made automatically.
 6. **STOP — Spec approval required.**
    Present the complete spec, then ask:
    > "Spec ready for CR-<cr-id>. Before you confirm, check:
-   > - [ ] Acceptance criteria match your intent exactly — not vague, not missing cases
-   > - [ ] Out-of-scope section is correct — nothing over-engineered, nothing missing
-   > - [ ] Error scenarios cover your real edge cases
+   > - [ ] Read §7 Acceptance Criteria — tell me which AC covers the **tenant isolation path** (or confirm there is none if this feature is not tenant-scoped)
+   > - [ ] Confirm Out-of-Scope section is correct — nothing over-engineered, nothing missing
+   > - [ ] Check §8 Error Scenarios — do these cover your real failure modes?
    > - [ ] No open business questions remain
    >
-   > Reply **'approved'** to proceed, or tell me what to change."
+   > Reply with the AC reference (e.g., "AC-3 covers tenant isolation") and **'approved'** to proceed, or tell me what to change."
 
    Wait. Apply any corrections. Re-present if changed.
 7. Lock the approved spec at `specs/cr/<cr-id>.spec.md`
@@ -146,7 +146,7 @@ All other decisions are made automatically.
 7. Resolve all review findings autonomously unless a finding requires a business decision
 8. **STOP** only if an unexpected risk surfaces → state it, ask how to proceed
 9. Verify TypeScript: `npx tsc --noEmit`
-10. Update CR status: PLANNED → BUILT (or OPEN → BUILT for `change`/`refactor`)
+10. Update CR status: PLANNED → BUILT (feature/security) or SPECCED → BUILT (change/refactor lean track)
 11. Report: "Build complete. Moving to close."
 
 ---

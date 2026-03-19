@@ -47,7 +47,7 @@ No stage may be skipped. Implementation without a reviewed spec is blocked by th
 
 These are HARD blockers. Code violating any of these must not proceed.
 
-1. **No implementation without a spec.** The `enforce-spec-first.js` hook blocks writes to `lib/features/` if no reviewed spec exists.
+1. **No implementation without a spec.** The `enforce-spec-first.dart` hook blocks writes to `lib/features/` if no reviewed spec exists.
 2. **No Flutter/Dio/Firebase imports in domain.** Any external package import in `lib/features/<f>/domain/` is a boundary violation.
 3. **No data access without userId.** Every repository method that returns user data must be scoped to `userId`. No exceptions.
 4. **No tokens stored manually.** Tokens are managed by the `AuthService` implementation — never extract and store them in SharedPreferences, Hive, or any manual store.

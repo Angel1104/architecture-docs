@@ -10,7 +10,7 @@
 | # | Rule | Detail |
 |---|------|--------|
 | 1 | Domain layer: pure TypeScript | No NestJS, no Prisma, no Firebase, no HTTP imports in `domain/`. Zero framework dependencies. |
-| 2 | RLS on every tenant query | Every query to a multi-tenant table inside `prisma.withTenant(tenantId, async (tx) => {...})` — never query without it |
+| 2 | RLS on every tenant query | Every query to a multi-tenant table inside `prisma.withTenant(tenantId, async (tx) => {...})` — never query without it. `withTenant()` lives in the repository, **not the controller**. |
 | 3 | `tenant_id` from auth only | Comes from authenticated user in Neon — never from request body or query params |
 | 4 | RFC 7807 errors | `type/title/status/detail/traceId` — never plain strings, never raw `Error`, never NestJS `HttpException` in domain |
 | 5 | Cloud Tasks for side effects | Never call email/notification/webhook services directly from use cases — always dispatch a Cloud Task |
@@ -18,7 +18,7 @@
 | 7 | Cursor pagination | `PaginatedResponse<T>` with Prisma `take+1` pattern — never offset/skip pagination |
 | 8 | OIDC for Cloud Tasks → FastAPI | Use GCP OIDC service account token — never Firebase Auth for this boundary |
 | 9 | Expand/contract migrations | Never drop a column in the same deploy that removes the code using it — always two deploys |
-| 10 | `traceId` in every log | Every `logger.log/warn/error` call includes `{ traceId }` from OpenTelemetry context |
+| 10 | Auth guard on every write endpoint | Every `@Post`, `@Put`, `@Patch`, `@Delete` must have `@UseGuards(FirebaseAuthGuard)`. OIDC guard (not Firebase) for `/internal/tasks/` endpoints. |
 
 > Full rules below. TL;DR is a summary — the sections below are authoritative.
 

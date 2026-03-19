@@ -32,11 +32,16 @@ For Critical incidents, you lead the containment first, then the fix.
    - Status must be `OPEN` — proceed directly to Bug Track phase
    - No spec or plan required — bugs skip both stages
 
-   **Standard track** (Type = `feature`, `change`, `refactor`):
+   **Feature/security track** (Type = `feature`, `security`):
    - Status must be `PLANNED`
    - If status is `OPEN` → "Run `/spec` then `/plan` first."
    - If status is `SPECCED` → "Plan not done yet. Run `/plan CR-<cr-id>` first."
    - Locate `specs/cr/plans/<cr-id>.plan.md` — must exist
+
+   **Change/refactor track** (Type = `change`, `refactor`):
+   - Status must be `SPECCED` — these types skip `/plan` by design
+   - If status is `OPEN` → "Run `/spec` first. Change and refactor CRs require a lean spec before building."
+   - No plan file required — proceed directly to Phase 1
 
    **Security / Incident track**:
    - Gate check relaxed — CR item from `/intake` is sufficient
@@ -134,11 +139,12 @@ Tell the developer:
 
 ## Phase 1: Context Loading (silent — no output)
 
-1. Read the full plan `specs/cr/plans/<cr-id>.plan.md`
+1. Read the full CR item `specs/cr/<cr-id>.cr.md`
 2. Read the full spec `specs/cr/<cr-id>.spec.md`
-3. Read the full CR item `specs/cr/<cr-id>.cr.md`
+3. If CR type is `feature` or `security`: read the full plan `specs/cr/plans/<cr-id>.plan.md`
+   If CR type is `change` or `refactor`: no plan file exists — work from the lean spec directly
 4. Read `references/nextjs_defaults.md`
-5. Read all existing test skeletons
+5. Read all existing test files for this feature
 6. Read existing code files that will be modified
 
 ---
@@ -249,7 +255,7 @@ During implementation, if you discover:
 - A risk not captured in the spec or plan
 - A breaking change to existing routes or components
 - A user isolation gap
-- A Firebase auth issue
+- An auth integration issue
 
 Stop. Present to the developer:
 
@@ -270,7 +276,7 @@ Once all layers are implemented and tests pass, run parallel code review.
 - Boundary violations — any domain file importing from infrastructure or presentation?
 - Dependency direction — does application import only from domain?
 - Server/Client Component split — is `'use client'` used correctly and only where needed?
-- Firebase client SDK placement — only in `'use client'` files or core/auth/?
+- Auth SDK placement — only in `'use client'` files or `src/core/auth/`? Never imported directly in feature code?
 
 **security-engineer agent:**
 - User isolation — are all authenticated routes protected?
@@ -316,7 +322,8 @@ All of the following must be true before approving:
 
 Update `specs/cr/<cr-id>.cr.md`:
 ```
-Status: PLANNED → BUILT
+Status: PLANNED → BUILT  (for feature/security CRs)
+     or SPECCED → BUILT  (for change/refactor CRs — they skip plan)
 Changelog: | <today> | Build approved — all tests pass, code review clear | |
 ```
 

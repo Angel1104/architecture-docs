@@ -129,11 +129,9 @@ Tell the developer:
 1. Read the full plan `specs/cr/plans/<cr-id>.plan.md`
 2. Read the full spec `specs/cr/<cr-id>.spec.md`
 3. Read the full CR item `specs/cr/<cr-id>.cr.md`
-4. Read `.claude/references/hexagonal_architecture.md`
-5. Read `.claude/references/technical_defaults.md`
-6. Read `.claude/references/tenant_isolation.md`
-7. Read all existing test files in `tests/<cr-id>/`
-8. Read existing code files that will be modified
+4. Read `references/flutter_defaults.md`
+5. Read all existing test files in `test/features/<feature>/`
+6. Read existing code files that will be modified
 
 ---
 
@@ -188,26 +186,27 @@ flutter test test/features/<feature>/presentation/controllers/ --reporter expand
 
 **Step 3 — Run tests again (expect GREEN):**
 ```bash
-flutter test test/features/<feature>/application/ --reporter expanded
+flutter test test/features/<feature>/domain/ --reporter expanded
+flutter test test/features/<feature>/presentation/controllers/ --reporter expanded
 ```
 
 Fix any failures before proceeding.
 
-### Layer 3: Infrastructure (`lib/features/<feature>/infrastructure/`)
+### Layer 3: Data Layer (`lib/features/<feature>/data/`)
 
 **Step 1 — Run tests first (expect RED):**
 ```bash
-flutter test test/features/<feature>/infrastructure/ --reporter expanded
+flutter test test/features/<feature>/data/ --reporter expanded
 ```
 
 **Step 2 — Implement to make them green:**
 - Repository implementations (`data/repositories/`)
-- Remote datasources via ApiClient (Dio)
-- JSON models with freezed + json_serializable
+- Remote datasources via ApiClient (Dio) — `data/datasources/`
+- JSON models with freezed + json_serializable — `data/models/`
 
 **Step 3 — Run tests again (expect GREEN):**
 ```bash
-flutter test test/features/<feature>/infrastructure/ --reporter expanded
+flutter test test/features/<feature>/data/ --reporter expanded
 ```
 
 Fix any failures before proceeding.
@@ -273,7 +272,7 @@ Spawn three review agents simultaneously:
 **security-engineer agent:**
 - User isolation — is every data access scoped to the authenticated userId?
 - Auth — does GoRouter guard cover all routes that display user data?
-- No tokens stored manually — Firebase manages token lifecycle?
+- No tokens stored manually — `AuthService` manages token lifecycle, not manual storage?
 - No secrets hardcoded or in dart-define that belong server-side?
 - AppError propagated correctly — no raw exceptions visible to user?
 

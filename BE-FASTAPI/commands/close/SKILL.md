@@ -157,9 +157,9 @@ If CR type is `feature`, update `specs/project.md`:
 3. Update or add a row for the module just built using this exact format:
 
 ```markdown
-| Módulo | Archivos clave | Handlers/Commands | Endpoints expuestos |
-|--------|---------------|-------------------|---------------------|
-| <module-name> | `app/domain/models/<name>.py`, `app/application/commands/<name>.py`, `app/adapters/outbound/<name>_repository.py`, `app/adapters/inbound/<name>_router.py` | `Create<Name>Command`, `Get<Name>Query` | `POST /internal/tasks/<name>`, `GET /internal/tasks/<name>/{id}` |
+| Module | Key files | Handlers/Commands | Endpoints |
+|--------|-----------|-------------------|-----------|
+| <module-name> | `src/domain/models/<name>.py`, `src/application/commands/<name>.py`, `src/adapters/outbound/<name>_repository.py`, `src/adapters/inbound/<name>_router.py` | `Create<Name>Command`, `Get<Name>Query` | `POST /internal/tasks/<name>`, `GET /internal/tasks/<name>/{id}` |
 ```
 
 Use the **actual file paths and names** from the implementation — not templates. Include:

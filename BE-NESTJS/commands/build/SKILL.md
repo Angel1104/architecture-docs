@@ -32,11 +32,17 @@ For Critical incidents, you lead the containment first, then the fix.
    - Status must be `OPEN` — proceed directly to Bug Track phase
    - No plan required — bugs skip spec and plan
 
-   **Standard track** (Type = `feature`, `change`, `refactor`):
+   **Full track** (Type = `feature`):
    - Status must be `PLANNED`
    - If status is `OPEN` → "Run `/spec` then `/plan` first."
    - If status is `SPECCED` → "Plan not done yet. Run `/plan CR-<cr-id>` first."
    - Locate `specs/cr/plans/<cr-id>.plan.md` — must exist
+
+   **Lean track** (Type = `change`, `refactor`):
+   - Status must be `SPECCED` (lean track skips plan)
+   - If status is `OPEN` → "Run `/spec` first."
+   - If status is `PLANNED` → proceed (plan exists, which is fine)
+   - No plan file required — generate test skeletons inline in Phase 0c before building
 
    **Security / Incident track**:
    - Gate check relaxed — CR item from `/intake` is sufficient
@@ -135,6 +141,23 @@ Tell the developer:
 > Test added: [test name]
 >
 > Next step: run `/close CR-<cr-id>` to formally close.
+
+---
+
+## Phase 0c: Lean Track — Test Skeletons (Type = `change` or `refactor` only)
+
+If CR type is `change` or `refactor` and no plan file exists, generate test skeletons before building.
+
+1. Read the spec `specs/cr/<cr-id>.spec.md` — extract the acceptance criteria and error scenarios
+2. For each AC, write a complete test (`describe` / `it`, arrange/act/assert) that:
+   - Derives the test name from the AC using GIVEN/WHEN/THEN language
+   - Uses `FakeRepository` for use case tests, NestJS testing module + Supertest for controller tests
+   - **Must fail (red) before implementation** — do not write tests that pass without code
+3. Place test files in their standard locations:
+   - Domain: `src/modules/<name>/domain/entities/__tests__/<Entity>.spec.ts`
+   - Use case: `src/modules/<name>/application/use-cases/__tests__/<UseCase>.usecase.spec.ts`
+   - Controller: `src/modules/<name>/interface/controllers/__tests__/<Name>Controller.spec.ts`
+4. Confirm test files are written, then proceed to Phase 1.
 
 ---
 
@@ -345,7 +368,8 @@ All of the following must be true before approving:
 
 Update `specs/cr/<cr-id>.cr.md`:
 ```
-Status: PLANNED → BUILT
+Status: PLANNED → BUILT   (feature track)
+     or SPECCED → BUILT   (change/refactor lean track)
 Changelog: | <today> | Build approved — all tests pass, code review clear | |
 ```
 

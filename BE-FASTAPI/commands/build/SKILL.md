@@ -32,11 +32,17 @@ For Critical incidents, you lead the containment first, then the fix.
    - Status must be `OPEN` — proceed directly to Bug Track phase
    - No spec or plan required
 
-   **Standard track** (Type = `feature`, `change`, `refactor`):
+   **Full track** (Type = `feature`):
    - Status must be `PLANNED`
    - If status is `OPEN` → "Run `/spec` then `/plan` first."
    - If status is `SPECCED` → "Plan not done yet. Run `/plan CR-<cr-id>` first."
    - Locate `specs/cr/plans/<cr-id>.plan.md` — must exist
+
+   **Lean track** (Type = `change`, `refactor`):
+   - Status must be `SPECCED` (lean track skips plan)
+   - If status is `OPEN` → "Run `/spec` first."
+   - If status is `PLANNED` → proceed (plan exists, which is fine)
+   - No plan file required — generate test skeletons inline in Phase 0c before building
 
    **Security / Incident track**:
    - Gate check relaxed — CR item is sufficient
@@ -123,14 +129,26 @@ Tell the developer:
 
 ---
 
+## Phase 0c: Lean Track — Test Skeletons (Type = `change` or `refactor` only)
+
+If CR type is `change` or `refactor` and no plan file exists, generate test skeletons before building.
+
+1. Read the spec `specs/cr/<cr-id>.spec.md` — extract all ACs and error scenarios
+2. For each AC, write a complete pytest test that:
+   - Uses `given_when_then` naming
+   - Uses `FakeRepository` for application-layer tests
+   - **Must fail (red) before implementation** — do not write tests that pass without code
+3. Create test files under `tests/<cr-id>/`
+4. Confirm test files are written, then proceed to Phase 1.
+
+---
+
 ## Phase 1: Context Loading (silent — no output)
 
-1. Read the full plan `specs/cr/plans/<cr-id>.plan.md`
+1. Read the full plan `specs/cr/plans/<cr-id>.plan.md` (skip if lean track with no plan)
 2. Read the full spec `specs/cr/<cr-id>.spec.md`
 3. Read the full CR item `specs/cr/<cr-id>.cr.md`
-4. Read `.claude/references/hexagonal_architecture.md`
-5. Read `.claude/references/technical_defaults.md`
-6. Read `.claude/references/tenant_isolation.md`
+4. Read `references/technical_defaults.md`
 7. Read all existing test files in `tests/<cr-id>/`
 8. Read existing code files that will be modified
 
@@ -322,7 +340,8 @@ If all checks pass, approve the build.
 
 Update `specs/cr/<cr-id>.cr.md`:
 ```
-Status: PLANNED → BUILT
+Status: PLANNED → BUILT   (feature/security full track)
+     or SPECCED → BUILT   (change/refactor lean track)
 Changelog: | <today> | Build approved — all tests pass, code review clear | |
 Artifacts: Code review: inline findings resolved | |
 ```

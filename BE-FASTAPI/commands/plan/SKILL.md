@@ -36,10 +36,8 @@ You are responsible for translating an approved spec into a concrete implementat
 
 1. Read the full approved spec `specs/cr/<cr-id>.spec.md`
 2. Read the full CR item `specs/cr/<cr-id>.cr.md`
-3. Read `.claude/references/hexagonal_architecture.md`
-4. Read `.claude/references/technical_defaults.md`
-5. Read `.claude/references/tenant_isolation.md`
-6. Scan existing code for patterns this CR extends or reuses:
+3. Read `references/technical_defaults.md`
+4. Scan existing code for patterns this CR extends or reuses:
    - `src/domain/` — existing models, ports, services
    - `src/application/` — existing commands and queries
    - `src/adapters/` — existing adapters to reuse or extend
@@ -212,6 +210,7 @@ For each domain port interface, create a fake in `tests/fakes/`:
 ```python
 # tests/fakes/fake_name_repository.py
 # In-memory implementation of NameRepository port — used in application tests only
+# Methods are async to match the domain port interface
 
 from src.domain.ports.name_repository import NameRepository
 from src.domain.models.name import Name
@@ -220,21 +219,23 @@ class FakeNameRepository(NameRepository):
     def __init__(self):
         self._store: list[Name] = []
 
-    def find_by_id(self, id: str) -> Name | None:
+    async def find_by_id(self, id: str) -> Name | None:
         return next((n for n in self._store if n.id == id), None)
 
-    def find_by_tenant(self, tenant_uid: str) -> list[Name]:
-        return [n for n in self._store if n.tenant_uid == tenant_uid]
+    async def find_by_tenant(self, tenant_uid: str, page: int = 1, page_size: int = 20) -> tuple[list[Name], int]:
+        all_names = [n for n in self._store if n.tenant_uid == tenant_uid]
+        start = (page - 1) * page_size
+        return all_names[start:start + page_size], len(all_names)
 
-    def save(self, name: Name) -> None:
+    async def save(self, name: Name) -> None:
         self._store.append(name)
 
-    def exists_by_value(self, tenant_uid: str, value: str) -> bool:
+    async def exists_by_value(self, tenant_uid: str, value: str) -> bool:
         return any(n.tenant_uid == tenant_uid and n.value == value for n in self._store)
 
     # Test helpers
     def find_all(self) -> list[Name]: return self._store
-    def seed(self, **kwargs) -> None: self._store.append(Name(id='seed-id', **kwargs))
+    def seed(self, **kwargs) -> None: self._store.append(Name(id=f'seed-{len(self._store)+1}', **kwargs))
     def clear(self) -> None: self._store = []
 ```
 

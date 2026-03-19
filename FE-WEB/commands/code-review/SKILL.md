@@ -44,9 +44,9 @@ Launch all three reviewer agents in parallel.
 
 ### Agent 1: sw-architect
 
-- Verify domain layer has no framework imports (React, Next.js, Firebase, fetch)
+- Verify domain layer has no framework imports (React, Next.js, any auth SDK, fetch)
 - Verify `'use client'` is used only when required — not as default
-- Verify Server Components do not use Firebase client SDK, useState, or event handlers
+- Verify Server Components do not use auth provider SDK, useState, or event handlers
 - Verify application hooks import only from domain layer
 - Verify all API calls go through ApiClient — no raw fetch in hooks or components
 - Verify presentation components have no business logic (no if/else on business rules in JSX)
@@ -57,7 +57,7 @@ Launch all three reviewer agents in parallel.
 - Check for hardcoded secrets, API keys, tokens in code
 - Verify no secrets in `NEXT_PUBLIC_` environment variables
 - Verify all authenticated routes have auth guards
-- Verify Firebase client SDK is not used in Server Components
+- Verify auth provider SDK is not used in Server Components or imported directly in feature code
 - Check for `dangerouslySetInnerHTML` with unvalidated user input (XSS risk)
 - Verify all forms validate with Zod before submission
 - Check for exposed stack traces or internal errors in error UI

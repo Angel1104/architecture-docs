@@ -90,8 +90,8 @@ Launch all three reviewer agents in parallel. Each gets the code files plus any 
 - Check for IDOR vulnerabilities
 
 **Flutter/Fullstack:**
-- Verify JWT stored in `FlutterSecureStorage` only
-- Verify auth interceptor handles 401 with silent token refresh
+- Verify tokens are NOT stored manually — `AuthService` implementation manages token lifecycle; no manual writes to `FlutterSecureStorage`, `SharedPreferences`, or Hive for auth tokens
+- Verify auth interceptor calls `AuthService.getToken()` and `AuthService.refreshToken()` — never accesses auth SDK directly
 - Verify local cache keys scoped by `userId`
 - Check for deep link injection risks
 

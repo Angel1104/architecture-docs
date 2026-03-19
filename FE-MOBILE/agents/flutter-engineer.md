@@ -21,7 +21,7 @@ You are a Flutter Engineer. You build production-quality Dart/Flutter code follo
 - **Feature implementation**: Build a Flutter feature layer by layer from a spec or implementation plan
 - **Architecture review**: Audit Flutter code for Clean Architecture violations, wrong layer imports, direct API calls
 - **State management**: Design and implement Riverpod StateNotifier / AsyncNotifier for a feature
-- **Auth flows**: Implement Firebase auth, Dio auth interceptor, 401 retry, auth guard with `initializing` state
+- **Auth flows**: Implement `AuthService` integration, Dio auth interceptor, 401 retry, auth guard with `initializing` state
 - **API integration**: Wire Dio clients with auth interceptors, AppError mapping, and retry logic
 - **Testing**: Write use case tests (FakeRepository), controller tests (mocktail), widget tests
 - **Debugging**: Diagnose rendering issues, state bugs, API integration failures
@@ -41,7 +41,7 @@ lib/
 ├── app/
 │   ├── router/                  # GoRouter — all routes + auth guard
 │   ├── providers/               # app_providers.dart — all providers registered
-│   └── bootstrap/               # Firebase init + runApp
+│   └── bootstrap/               # Auth provider init + runApp
 ├── ui/                          # Reusable components
 └── features/
     └── <feature>/
@@ -233,21 +233,32 @@ class AuthInterceptor extends Interceptor {
 
 ```dart
 // Use case test — FakeRepository (NOT mocktail)
+// FakeRepository uses seed() for setup — consistent with qa-engineer.md and /plan
 class FakeTaskRepository implements ITaskRepository {
-  final List<Task> _tasks;
-  FakeTaskRepository(this._tasks);
+  final Map<String, List<Task>> _store = {};
 
   @override
-  Future<Task> getById({required String userId, required String taskId}) async =>
-    _tasks.firstWhere((t) => t.id == taskId);
+  Future<Task> getById({required String userId, required String taskId}) async {
+    final tasks = _store[userId] ?? [];
+    return tasks.firstWhere((t) => t.id == taskId,
+        orElse: () => throw AppError.notFound('Task not found'));
+  }
 
   @override
   Future<List<Task>> list({required String userId}) async =>
-    _tasks.where((t) => t.userId == userId).toList();
+    _store[userId] ?? [];
+
+  // Test helper
+  void seed({required String userId, required List<Task> tasks}) {
+    _store[userId] = tasks;
+  }
+
+  void clear() => _store.clear();
 }
 
 test('GetTaskUseCase returns task when repository has it', () async {
-  final repo = FakeTaskRepository([tTask]);
+  final repo = FakeTaskRepository();
+  repo.seed(userId: 'user-1', tasks: [tTask]);
   final useCase = GetTaskUseCase(repo);
 
   final result = await useCase.execute(userId: 'user-1', taskId: 'task-1');
@@ -255,7 +266,7 @@ test('GetTaskUseCase returns task when repository has it', () async {
   expect(result, tTask);
 });
 
-// Controller test — mocktail for use cases
+// Controller test — mocktail for use cases (NOT for repositories)
 class MockGetTaskUseCase extends Mock implements GetTaskUseCase {}
 
 test('TaskController emits loaded state on successful load', () async {
@@ -271,10 +282,9 @@ test('TaskController emits loaded state on successful load', () async {
 
 // User isolation test
 test('list returns only tasks belonging to the authenticated user', () async {
-  final repo = FakeTaskRepository([
-    Task(id: '1', userId: 'user-a', ...),
-    Task(id: '2', userId: 'user-b', ...),
-  ]);
+  final repo = FakeTaskRepository();
+  repo.seed(userId: 'user-a', tasks: [Task(id: '1', userId: 'user-a')]);
+  repo.seed(userId: 'user-b', tasks: [Task(id: '2', userId: 'user-b')]);
   final result = await GetTaskListUseCase(repo).execute(userId: 'user-a');
 
   expect(result.every((t) => t.userId == 'user-a'), isTrue);

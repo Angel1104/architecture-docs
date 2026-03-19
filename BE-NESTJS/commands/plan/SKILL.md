@@ -156,21 +156,33 @@ For each new port interface, create a fake implementation in `src/modules/<name>
 
 import { INameRepository } from '../../domain/ports/INameRepository'
 import { Name } from '../../domain/entities/Name'
+import { PaginatedResponse, PaginationParams } from '@/shared/interface/pagination.types'
 
 export class FakeNameRepository implements INameRepository {
   private store: Name[] = []
 
   async findById(id: string) { return this.store.find(n => n.id === id) ?? null }
-  async findByTenant(tenantId: string) { return this.store.filter(n => n.tenantId === tenantId) }
+
+  async findByTenant(params: PaginationParams): Promise<PaginatedResponse<Name>> {
+    const all = this.store.filter(n => n.tenantId === params.tenantId)
+    const limit = params.limit ?? 20
+    const startIdx = params.cursor ? all.findIndex(n => n.id === params.cursor) + 1 : 0
+    const slice = all.slice(startIdx, startIdx + limit + 1)
+    const hasMore = slice.length > limit
+    const data = hasMore ? slice.slice(0, -1) : slice
+    return { data, nextCursor: hasMore ? data[data.length - 1].id : null, hasMore }
+  }
+
   async save(name: Name) { this.store.push(name) }
   async delete(id: string) { this.store = this.store.filter(n => n.id !== id) }
-  async existsByValue(tenantId: string, value: string) {
+
+  async existsByValue(tenantId: string, value: string): Promise<boolean> {
     return this.store.some(n => n.tenantId === tenantId && n.value === value)
   }
 
   // Test helpers
   findAll() { return this.store }
-  seed(partial: Partial<Name>) { this.store.push({ id: 'seed-id', ...partial } as Name) }
+  seed(partial: Partial<Name>) { this.store.push({ id: `seed-${this.store.length + 1}`, ...partial } as Name) }
   clear() { this.store = [] }
 }
 ```
@@ -230,10 +242,12 @@ describe('CreateNameUseCase — CR-<crId>', () => {
 
   // Tenant isolation — mandatory for every module
   it('cannot see names from a different tenant', async () => {
-    await repo.seed({ tenantId: 'tenant-b', value: 'Other Corp' })
-    const result = await useCase.execute({ tenantId: 'tenant-a', userId: 'user-1', value: 'My Corp' })
-    expect(repo.findByTenant('tenant-a')).toHaveLength(1)
-    expect(repo.findByTenant('tenant-b')).toHaveLength(1) // unchanged
+    repo.seed({ tenantId: 'tenant-b', value: 'Other Corp' })
+    await useCase.execute({ tenantId: 'tenant-a', userId: 'user-1', value: 'My Corp' })
+    const tenantA = await repo.findByTenant({ tenantId: 'tenant-a' })
+    const tenantB = await repo.findByTenant({ tenantId: 'tenant-b' })
+    expect(tenantA.data).toHaveLength(1)
+    expect(tenantB.data).toHaveLength(1) // unchanged
   })
 })
 ```

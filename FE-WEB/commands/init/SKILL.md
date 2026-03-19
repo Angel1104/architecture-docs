@@ -53,10 +53,10 @@ Then continue with these questions, in order, each waiting for a reply:
 **4. Scope negativo** — after the feature list:
 > "What is this app explicitly NOT going to do? I want to capture the boundaries now so we don't drift later."
 
-**5. Firebase** — after scope:
-> "Is a Firebase project already configured for this? If yes, what's the project ID?"
+**5. Auth provider** — after scope:
+> "What auth provider will this app use? Common choices: Firebase Auth, Auth0, Clerk, custom JWT backend. If it's not decided yet, just say so."
 
-**6. Backend** — after Firebase:
+**6. Backend** — after auth provider:
 > "Is there a NestJS backend URL already? If so, what is it? If not, I'll leave it as a placeholder."
 
 **7. File uploads (R2)** — after backend:
@@ -77,14 +77,14 @@ Once you have all eight answers, silently compose what you know:
 - 2–3 sentence product description
 - Explicit scope — what it does NOT do
 - Feature list for v1 (these become folder names, normalized to kebab-case)
-- Firebase: configured yes/no + project ID if yes
+- Auth provider: which one, or TBD
 - Backend URL or placeholder
 - File uploads: yes/no
 - Billing: yes/no
 
 Then present a brief summary and ask for confirmation before writing anything:
 
-> "Here's what I've got — [product name]: [one sentence description]. v1 features: [list]. Out of scope: [summary]. Firebase: [status]. Backend: [url or TBD]. Uploads: [yes/no]. Billing: [yes/no].
+> "Here's what I've got — [product name]: [one sentence description]. v1 features: [list]. Out of scope: [summary]. Auth provider: [chosen provider or TBD]. Backend: [url or TBD]. Uploads: [yes/no]. Billing: [yes/no].
 >
 > Does that look right? Any corrections before I set everything up?"
 
@@ -116,20 +116,20 @@ Once confirmed, get the current date with `date` and write `specs/project.md`:
 |---------|-------------|-----------|--------|
 <one row per v1 feature — kebab-case name, short description, src/features/<name>/, PLANNED>
 
-## Servicios externos configurados
-| Servicio | Uso | Configurado |
-|----------|-----|-------------|
-| Firebase Auth | Autenticación de usuarios (JWT) | <Sí — project ID: X / Pendiente> |
-| NestJS Backend | API REST (/v1/) | <URL o Pendiente> |
-| Cloudflare R2 | File uploads | <Sí / No aplica en v1> |
-| Billing | Suscripciones | <En scope / No en scope> |
+## External services
+| Service | Purpose | Configured |
+|---------|---------|------------|
+| Auth Provider | User authentication — implements `AuthService` | <Provider chosen or TBD> |
+| Backend API | REST API (/v1/) | <URL or TBD> |
+| File storage | User uploads | <In scope / Not in v1> |
+| Billing | Subscriptions | <In scope / Not in scope> |
 
-## Decisiones tomadas en este proyecto
-<project-specific decisions that deviate from nextjs_defaults.md defaults, or "Ninguna — seguir todos los defaults de nextjs_defaults.md">
+## Project decisions
+<project-specific decisions that deviate from nextjs_defaults.md defaults, or "None — follow all nextjs_defaults.md defaults">
 
-## Feature Map (se actualiza con cada /build completado)
-| Feature | Archivos clave | Hooks/Componentes principales | Endpoints que consume |
-|---------|---------------|-------------------------------|----------------------|
+## Feature Map (updated by /close after each feature is built)
+| Feature | Key files | Primary hooks / components | Endpoints consumed |
+|---------|-----------|---------------------------|-------------------|
 ```
 
 ---
@@ -167,141 +167,136 @@ src/features/<feature-name>/presentation/forms/
 
 ### Files
 
-**`src/core/api/client.ts`** — minimal ApiClient skeleton:
+**`src/core/auth/AuthService.ts`** — AuthService interface (always present, provider-agnostic):
 
 ```typescript
-// src/core/api/client.ts
-// ApiClient — injects Firebase Bearer token into every request
-// Full implementation: references/nextjs_defaults.md § ApiClient
+// src/core/auth/AuthService.ts
+// Provider-agnostic auth contract. The concrete implementation lives in
+// src/core/auth/<provider>.ts (e.g., firebaseAuthService.ts, auth0AuthService.ts)
+// This interface is the ONLY thing feature code and ApiClient depend on.
 
-import { ApiError } from '@/core/errors/ApiError';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-export async function apiClient<T>(
-  path: string,
-  options: RequestInit & { getToken: () => Promise<string> }
-): Promise<T> {
-  const { getToken, ...fetchOptions } = options;
-  const token = await getToken();
-
-  const res = await fetch(`${API_URL}${path}`, {
-    ...fetchOptions,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...fetchOptions.headers,
-    },
-  });
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw ApiError.fromResponse(res.status, body);
-  }
-
-  return res.json();
+export interface AuthService {
+  readonly state: 'initializing' | 'authenticated' | 'unauthenticated'
+  getToken(): Promise<string | null>
+  refreshToken(): Promise<string | null>
+  logout(): Promise<void>
 }
 ```
 
-**`src/core/auth/firebase.ts`** — Firebase client SDK init skeleton:
-
-```typescript
-// src/core/auth/firebase.ts
-// Firebase client SDK initialization — use only in 'use client' files
-// Full config: references/nextjs_defaults.md § Firebase
-
-import { initializeApp, getApps } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
-
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-```
-
-**`src/core/auth/useAuth.ts`** — useAuth hook skeleton:
+**`src/core/auth/useAuth.ts`** — useAuth hook skeleton (provider-agnostic):
 
 ```typescript
 // src/core/auth/useAuth.ts
-// useAuth — wraps Firebase onAuthStateChanged
-// Full implementation: references/nextjs_defaults.md § Auth
+// Exposes AuthService from context. Concrete AuthService is injected at the
+// composition root (app layout or Provider). Feature code never touches the auth SDK.
+'use client'
 
-'use client';
-
-import { useEffect, useState } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from './firebase';
-
-type AuthState = 'loading' | 'authenticated' | 'unauthenticated';
+import { useContext } from 'react'
+import { AuthContext } from './AuthContext'
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
-  const [state, setState] = useState<AuthState>('loading');
+  const authService = useContext(AuthContext)
+  if (!authService) throw new Error('useAuth must be used within AuthProvider')
+  return authService
+}
+// TODO: add src/core/auth/<provider>.ts implementing AuthService for your chosen provider
+// See references/nextjs_defaults.md §4 for Firebase and Auth0 examples
+```
 
-  useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setState(u ? 'authenticated' : 'unauthenticated');
-    });
-  }, []);
+**`src/core/api/client.ts`** — ApiClient skeleton (canonical pattern from §3):
 
-  return { user, state };
+```typescript
+// src/core/api/client.ts
+// createApiClient(auth) — token injected at construction, never passed per call
+// Full implementation: references/nextjs_defaults.md §3
+
+import type { AuthService } from '@/core/auth/AuthService'
+import type { ApiError } from '@/core/errors/ApiError'
+import { v4 as uuidv4 } from 'uuid'
+
+export type ApiClient = ReturnType<typeof createApiClient>
+
+export function createApiClient(auth: AuthService) {
+  // Full implementation in nextjs_defaults.md §3
+  // Handles: Bearer token, X-Trace-ID, 401 retry, RFC 7807 errors
+  async function request<T>(path: string, options: RequestInit = {}, retry = false): Promise<T> {
+    const token = await auth.getToken()
+    const traceId = uuidv4()
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '',
+                  'X-Trace-ID': traceId, ...options.headers },
+    })
+    if (!res.ok) {
+      if (res.status === 401 && !retry) {
+        const fresh = await auth.refreshToken()
+        if (fresh) return request<T>(path, options, true)
+        await auth.logout()
+        throw { type: 'error/unauthenticated', title: 'Session expired', status: 401, detail: '', traceId } satisfies ApiError
+      }
+      const body = await res.json().catch(() => ({}))
+      throw { type: body.type ?? 'error/unknown', title: body.title ?? 'An error occurred',
+              status: res.status, detail: body.detail ?? '', traceId: body.traceId ?? traceId } satisfies ApiError
+    }
+    return res.json()
+  }
+  return {
+    get: <T>(path: string) => request<T>(path),
+    post: <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+    put: <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
+    patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+    delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  }
 }
 ```
 
-**`src/core/errors/ApiError.ts`** — ApiError type:
+**`src/core/errors/ApiError.ts`** — ApiError type (RFC 7807):
 
 ```typescript
 // src/core/errors/ApiError.ts
-// Typed API error — infrastructure maps all fetch errors to this type
-// Domain and application layers never see raw Error or fetch responses
+// RFC 7807 error shape — all API errors use this type
+// Never throw raw Error from infrastructure. Never render Error.message in UI.
 
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly code: string,
-    message: string
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
+export type ApiError = {
+  type: string
+  title: string
+  status: number
+  detail: string
+  traceId: string
+  fieldErrors?: Array<{ field: string; message: string }>
+}
 
-  static fromResponse(status: number, body: Record<string, unknown>): ApiError {
-    return new ApiError(
-      status,
-      String(body['code'] ?? 'UNKNOWN'),
-      String(body['message'] ?? `HTTP ${status}`)
-    );
-  }
+export function isApiError(err: unknown): err is ApiError {
+  return typeof err === 'object' && err !== null && 'type' in err && 'status' in err
 }
 ```
 
-**`.env.example`** — all environment variables from `references/nextjs_defaults.md` § 10:
+**`.env.example`** — environment variables:
 
 ```bash
 # .env.example — copy to .env.local and fill in values
 # Never commit .env.local
 
-# ── Client-visible (NEXT_PUBLIC_) ──────────────────────────────────────────
-# Non-sensitive config only. These are bundled into the client bundle.
-
+# ── Always required ──────────────────────────────────────────────────────────
 NEXT_PUBLIC_API_URL=                   # Backend base URL (e.g. https://api.example.com)
-NEXT_PUBLIC_FIREBASE_API_KEY=          # Firebase web API key
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=      # Firebase auth domain
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=       # Firebase project ID
-NEXT_PUBLIC_FIREBASE_APP_ID=           # Firebase app ID
+APP_ENV=development                    # production / staging / development
 
-# ── Server-side only ────────────────────────────────────────────────────────
-# Never use NEXT_PUBLIC_ for these. Only available in Server Actions and API routes.
+# ── Auth provider config (add entries for your chosen provider) ──────────────
+# Firebase example:
+#   NEXT_PUBLIC_FIREBASE_API_KEY=
+#   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+#   NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+#   NEXT_PUBLIC_FIREBASE_APP_ID=
+#
+# Auth0 example:
+#   NEXT_PUBLIC_AUTH0_DOMAIN=
+#   NEXT_PUBLIC_AUTH0_CLIENT_ID=
+#
+# Server-side (never NEXT_PUBLIC_):
+#   AUTH_SECRET=           # e.g. for NextAuth.js or JWT signing
+#   DATABASE_URL=          # DB connection string for Server Actions
 
-FIREBASE_ADMIN_PRIVATE_KEY=            # Firebase Admin SDK private key
-FIREBASE_ADMIN_CLIENT_EMAIL=           # Firebase Admin SDK client email
-DATABASE_URL=                          # DB connection string (if Server Actions use DB directly)
+# Never expose secrets via NEXT_PUBLIC_ — those are bundled into the client.
 ```
 
 ---
@@ -314,13 +309,16 @@ Tell the developer what was done and what comes next:
 >
 > Created:
 > - `specs/project.md` — project memory (update it as the project evolves)
-> - `src/core/` — ApiClient, Firebase auth init, useAuth hook, ApiError
-> - `src/features/<feature>/` — empty clean architecture folders for each v1 feature
-> - `src/theme/` — empty, ready for your token and component files
-> - `.env.example` — all required environment variables
+> - `src/core/auth/` — `AuthService.ts` interface + `useAuth.ts` hook (add your provider implementation)
+> - `src/core/api/client.ts` — `createApiClient(auth)` skeleton
+> - `src/core/errors/ApiError.ts` — RFC 7807 error type
+> - `src/features/<feature>/` — clean architecture folders for each v1 feature
+> - `src/theme/` — ready for your token and component files
+> - `.env.example` — required variables (auth provider section is template — fill in for your provider)
 >
-> Before your first feature:
-> - Copy `.env.example` → `.env.local` and fill in the Firebase and API values
-> - Run `npm install` (or `pnpm install`) to make sure dependencies are in place
+> Next steps:
+> - Add `src/core/auth/<provider>.ts` implementing `AuthService` for your chosen provider (see `references/nextjs_defaults.md §4` for examples)
+> - Copy `.env.example` → `.env.local` and fill in values
+> - Run `npm install` (or `pnpm install`) to install dependencies
 >
 > When you're ready to build: run `/intake <description of your first feature>` to start the process.

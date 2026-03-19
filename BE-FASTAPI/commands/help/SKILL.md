@@ -55,7 +55,7 @@ Critical incident fast track:
 
 ### CR-ID Format
 
-Auto-generated at intake: `YYMMDD-HHMMSS` — e.g. `260311-143022`
+Auto-generated at intake: `YYMMDD-HHMMSS-<3 random alphanumeric chars>` — e.g. `260311-143022-a7k`
 
 ### Key Principles
 

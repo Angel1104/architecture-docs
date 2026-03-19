@@ -145,7 +145,7 @@ refactor         → Lean: bounded context + ACs → build → close
 ```
 Blast radius:    what is affected if this goes wrong
 Reversibility:   can it be rolled back easily
-Security impact: does it touch auth, user isolation, Firebase, secrets
+Security impact: does it touch auth (AuthService), user isolation, secrets
 Dependencies:    what other features or CRs does this touch
 Unknowns:        what is not yet clear
 ```
@@ -179,7 +179,7 @@ Format:
 **Risk & Impact:**
 - Blast radius: [what is affected]
 - Reversibility: [easy rollback / hard to reverse / irreversible]
-- Security: [flag if auth, user isolation, Firebase, or secrets is involved]
+- Security: [flag if auth (AuthService), user isolation, or secrets is involved]
 - Dependencies: [other features or CRs this touches, or "none"]
 
 **Recommended approach:**

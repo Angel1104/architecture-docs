@@ -95,7 +95,7 @@ export interface INameRepository {
   findByTenant(params: PaginationParams): Promise<PaginatedResponse<Name>>
   save(name: Name): Promise<void>
   delete(id: string): Promise<void>
-  existsByValue(value: string): Promise<boolean>
+  existsByValue(tenantId: string, value: string): Promise<boolean>
 }
 
 // DI token
@@ -131,7 +131,7 @@ export class CreateNameUseCase {
   ) {}
 
   async execute(input: CreateNameInput): Promise<CreateNameOutput> {
-    const exists = await this.nameRepo.existsByValue(input.value)
+    const exists = await this.nameRepo.existsByValue(input.tenantId, input.value)
     if (exists) throw new NameAlreadyExistsError(input.value)
 
     const name = createName({
@@ -164,35 +164,36 @@ export class PrismaNameRepository implements INameRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findById(id: string): Promise<Name | null> {
-    // Note: This method must be called within a withTenant transaction
-    // for tenant-scoped tables. Controller/use case context ensures this.
     const row = await this.prisma.name.findUnique({ where: { id } })
     if (!row) return null
     return createName(row)
   }
 
   async findByTenant(params: PaginationParams): Promise<PaginatedResponse<Name>> {
-    // Called inside withTenant — RLS handles tenant scoping automatically
-    const limit = Math.min(params.limit ?? 20, 100)
-    const rows = await this.prisma.name.findMany({
-      where: params.cursor ? { id: { gt: params.cursor } } : {},
-      orderBy: { createdAt: 'asc' },
-      take: limit + 1,
+    return this.prisma.withTenant(params.tenantId, async (tx) => {
+      const limit = Math.min(params.limit ?? 20, 100)
+      const rows = await tx.name.findMany({
+        where: params.cursor ? { id: { gt: params.cursor } } : {},
+        orderBy: { createdAt: 'asc' },
+        take: limit + 1,
+      })
+      const hasMore = rows.length > limit
+      const data = hasMore ? rows.slice(0, -1) : rows
+      return {
+        data: data.map(createName),
+        nextCursor: hasMore ? data[data.length - 1].id : null,
+        hasMore,
+      }
     })
-    const hasMore = rows.length > limit
-    const data = hasMore ? rows.slice(0, -1) : rows
-    return {
-      data: data.map(createName),
-      nextCursor: hasMore ? data[data.length - 1].id : null,
-      hasMore,
-    }
   }
 
   async save(name: Name): Promise<void> {
-    await this.prisma.name.upsert({
-      where: { id: name.id },
-      create: { id: name.id, tenantId: name.tenantId, value: name.value, createdAt: name.createdAt, updatedAt: name.updatedAt },
-      update: { value: name.value, updatedAt: name.updatedAt },
+    return this.prisma.withTenant(name.tenantId, async (tx) => {
+      await tx.name.upsert({
+        where: { id: name.id },
+        create: { id: name.id, tenantId: name.tenantId, value: name.value, createdAt: name.createdAt, updatedAt: name.updatedAt },
+        update: { value: name.value, updatedAt: name.updatedAt },
+      })
     })
   }
 
@@ -200,9 +201,11 @@ export class PrismaNameRepository implements INameRepository {
     await this.prisma.name.delete({ where: { id } })
   }
 
-  async existsByValue(value: string): Promise<boolean> {
-    const count = await this.prisma.name.count({ where: { value } })
-    return count > 0
+  async existsByValue(tenantId: string, value: string): Promise<boolean> {
+    return this.prisma.withTenant(tenantId, async (tx) => {
+      const count = await tx.name.count({ where: { value } })
+      return count > 0
+    })
   }
 }
 ```
@@ -215,7 +218,6 @@ import { Controller, Get, Post, Body, Param, UseGuards, Query } from '@nestjs/co
 import { FirebaseAuthGuard } from '@/shared/interface/guards/FirebaseAuthGuard'
 import { CurrentUser } from '@/shared/interface/decorators/CurrentUser'
 import { IUser } from '@/modules/auth/domain/entities/IUser'
-import { PrismaService } from '@/shared/infrastructure/prisma/PrismaService'
 import { CreateNameUseCase } from '../../application/use-cases/CreateName.usecase'
 import { CreateNameDto } from '../dtos/CreateName.dto'
 import { PaginationParams } from '@/shared/interface/pagination.types'
@@ -225,21 +227,21 @@ import { PaginationParams } from '@/shared/interface/pagination.types'
 export class NameController {
   constructor(
     private readonly createName: CreateNameUseCase,
-    private readonly prisma: PrismaService,
   ) {}
 
   @Post()
   async create(@Body() dto: CreateNameDto, @CurrentUser() user: IUser) {
-    return this.prisma.withTenant(user.tenantId, async () =>
-      this.createName.execute({
-        value: dto.value,
-        tenantId: user.tenantId,
-        userId: user.id,
-      })
-    )
+    return this.createName.execute({
+      value: dto.value,
+      tenantId: user.tenantId,
+      userId: user.id,
+    })
   }
 }
 ```
+
+> **Architecture rule:** Controllers inject use cases only — never `PrismaService` directly.
+> The `withTenant()` RLS context is set inside each repository method, not in the controller.
 
 ### Zod DTO
 

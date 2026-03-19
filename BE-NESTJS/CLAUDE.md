@@ -39,7 +39,7 @@ No stage may be skipped. Implementation without a reviewed spec is blocked by th
 11. **Explicit over implicit.** No global mutable state. Tenant context resolved from authenticated user, not from thread locals or ambient globals.
 12. **Errors are RFC 7807.** Every HTTP error response uses RFC 7807 format: `type`, `title`, `status`, `detail`, `traceId`. Domain errors never reference HTTP codes.
 13. **Review before merge.** Multi-agent review (spec, architecture, security) catches issues before code reaches production.
-14. **Automate enforcement.** The Node.js hook blocks writes to `src/` if no reviewed spec exists.
+14. **Automate enforcement.** The `hooks/enforce-spec-first.js` hook blocks writes to `src/modules/` if no reviewed spec exists.
 15. **Name things precisely.** Specs use kebab-case (`user-registration`). Ports describe capabilities (`IUserRepository`), not implementations (`PrismaUserRepository`).
 16. **Document decisions.** Architecture decisions, trade-offs, and rejected alternatives are captured in specs, not lost in chat threads.
 
