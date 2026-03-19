@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/hooks/enforce-spec-first.js\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-spec-first.js\""
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/hooks/enforce-spec-first.js\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/enforce-spec-first.js\""
           }
         ]
       }

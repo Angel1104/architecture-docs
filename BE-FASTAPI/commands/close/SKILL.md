@@ -148,29 +148,28 @@ Append to the end of the file:
 
 ---
 
-## Phase 5b: Update specs/project.md Module Map (feature CRs only)
+## Phase 5b: Update specs/project.md
 
-If CR type is `feature`, update `specs/project.md`:
+Always update `specs/project.md` after every CR closes, regardless of type.
 
 1. Read `specs/project.md`
-2. Find the `## Module Map` section
-3. Update or add a row for the module just built using this exact format:
 
-```markdown
-| Module | Key files | Handlers/Commands | Endpoints |
-|--------|-----------|-------------------|-----------|
-| <module-name> | `src/domain/models/<name>.py`, `src/application/commands/<name>.py`, `src/adapters/outbound/<name>_repository.py`, `src/adapters/inbound/<name>_router.py` | `Create<Name>Command`, `Get<Name>Query` | `POST /internal/tasks/<name>`, `GET /internal/tasks/<name>/{id}` |
-```
+2. **Update the endpoint section** (for `feature` and `change` CRs):
+   - Find the section `### \`POST /internal/tasks/<endpoint-name>\`` in `## Endpoints — v1`
+   - Update the **Use case** table: correct class name and file path to match what was actually created
+   - Update **Domain models**: add any models created during implementation
+   - Update **Archivos clave**: correct any anticipated paths that differed from what was actually created
 
-Use the **actual file paths and names** from the implementation — not templates. Include:
-- Domain model file (`app/domain/models/`)
-- Application command/query handler files (`app/application/commands/` or `queries/`)
-- Outbound adapter — repository implementation (`app/adapters/outbound/`)
-- Inbound adapter — FastAPI router (`app/adapters/inbound/`)
-- Handler/command class names
-- Exposed endpoint routes (e.g. `POST /internal/tasks/process-document`)
+3. **Update the Navigation Index**:
+   - Add any new files created during this CR that are not already in the index
+   - Correct any anticipated paths that differed from what was actually built
 
-This keeps the project map current so future bug CRs can locate files without scanning the codebase.
+4. **Append a row to CR History**:
+   ```
+   | <cr-id> | <type> | <endpoint-name> | <one sentence — what was delivered> | CLOSED |
+   ```
+
+This keeps `specs/project.md` as the single source of truth so any agent can navigate the project without scanning `src/`.
 
 ---
 

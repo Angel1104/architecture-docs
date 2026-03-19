@@ -149,19 +149,29 @@ Append to the end of the file:
 
 ---
 
-## Phase 5b: Update specs/project.md Feature Map (feature CRs only)
+## Phase 5b: Update specs/project.md
 
-If CR type is `feature`, update `specs/project.md`:
+Always update `specs/project.md` after every CR closes, regardless of type.
 
 1. Read `specs/project.md`
-2. Find the `## Feature Map` section
-3. For the feature that was built, update or add a row:
 
-| Feature | Archivos clave | Controllers/Providers | Endpoints que consume |
-|---------|---------------|----------------------|----------------------|
-| `<feature_name>` | `lib/features/<name>/domain/entities/<Entity>.dart`, `lib/features/<name>/data/repositories/<Name>RepositoryImpl.dart`, `lib/features/<name>/presentation/controllers/<name>_controller.dart`, `lib/features/<name>/presentation/screens/<Name>Screen.dart` | `<name>ControllerProvider`, `<Name>State` | `GET /v1/<name>`, `POST /v1/<name>` |
+2. **Update the feature's use cases and screens** (for `feature` and `change` CRs):
+   - Find the section `### \`<feature_name>\`` in `## Features — v1`
+   - Update the **Use cases** table: add any new use cases with actual class names and file paths
+   - Update the **Screens** table: add any new screens with actual file paths
+   - Update the **API endpoints que consume** table: add or correct endpoint routes
+   - Update **Archivos clave**: correct any anticipated paths that differed from what was actually created
 
-Fill in actual file paths and provider names from the implementation just completed.
+3. **Update the Navigation Index**:
+   - Add any new files created during this CR that are not already in the index
+   - Correct any anticipated paths that differed from what was actually built
+
+4. **Append a row to CR History**:
+   ```
+   | <cr-id> | <type> | <feature_name> | <one sentence — what was delivered> | CLOSED |
+   ```
+
+This keeps `specs/project.md` as the single source of truth so any agent can navigate the project without scanning `lib/`.
 
 ---
 

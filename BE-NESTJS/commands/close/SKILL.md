@@ -135,21 +135,28 @@ Append to the end of the file:
 
 ---
 
-## Phase 5b: Update specs/project.md Feature Map (feature CRs only)
+## Phase 5b: Update specs/project.md
 
-If CR type is `feature`, update `specs/project.md`:
+Always update `specs/project.md` after every CR closes, regardless of type.
 
 1. Read `specs/project.md`
-2. Find the `## Module Map` section
-3. For the module that was built, update or add a row:
 
-| Módulo | Archivos clave | Use cases | Endpoints expuestos |
-|--------|---------------|-----------|---------------------|
-| `<module-name>` | `src/modules/<name>/domain/entities/<Entity>.ts`, `src/modules/<name>/application/use-cases/<UseCase>.usecase.ts`, `src/modules/<name>/infrastructure/adapters/<Name>Repository.ts`, `src/modules/<name>/interface/controllers/<Name>Controller.ts` | `<UseCase1>`, `<UseCase2>` | `POST /v1/<name>`, `GET /v1/<name>` |
+2. **Update the module's use cases and endpoints** (for `feature` and `change` CRs):
+   - Find the section `### \`<module-name>\`` in `## Módulos — v1`
+   - Update the **Use cases** table: add any new use cases with their actual class names and file paths
+   - Update the **HTTP Endpoints** table: add any new or changed endpoints with actual routes
+   - Update **Archivos clave**: correct any anticipated paths that differed from what was actually created
 
-Fill in actual file paths, use case names, and endpoint routes from the implementation just completed.
+3. **Update the Navigation Index**:
+   - Add any new files created during this CR that are not already in the index
+   - Correct any anticipated paths that differed from what was actually built
 
-This keeps the project map current so `/intake` can locate files for future bugs without scanning the codebase.
+4. **Append a row to CR History**:
+   ```
+   | <cr-id> | <type> | <module-name> | <one sentence — what was delivered> | CLOSED |
+   ```
+
+This keeps `specs/project.md` as the single source of truth so any agent can navigate the project without scanning `src/`.
 
 ---
 

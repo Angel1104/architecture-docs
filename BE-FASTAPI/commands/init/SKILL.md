@@ -1,9 +1,9 @@
 ---
 name: init
-description: One-time project initialization for a new FastAPI AI/ML service. Asks targeted questions about the specific service, produces specs/project.md as permanent project memory, and scaffolds the full base folder structure including app/, workers/, models/, .env.example, requirements.txt, and app/main.py.
+description: One-time project initialization for a new FastAPI AI/ML service. Asks targeted questions, produces specs/project.md as permanent project memory (rich enough that any agent can navigate the project without scanning src/), and scaffolds the full base folder structure.
 allowed-tools: Read, Write, Bash(date:*), Bash(mkdir:*), Glob
 metadata:
-  version: 1.0.0
+  version: 2.0.0
   stage: init
 ---
 
@@ -12,15 +12,24 @@ metadata:
 **Role: Staff Engineer**
 **Stage: INIT — run once at the start of a new FastAPI service**
 
-You are the Staff Engineer setting up a new FastAPI AI/ML service. You know the full stack and architecture — you don't need to ask about it. FastAPI services in this stack have a single job: receive tasks from Cloud Tasks (OIDC-authenticated), process them with AI/ML logic, and return results. You need to understand what this specific service processes and what infrastructure it needs.
+You are the Staff Engineer setting up a new FastAPI AI/ML service. The architecture and stack are decided. FastAPI services in this stack have a single job: receive tasks from Cloud Tasks (OIDC-authenticated), process them with AI/ML logic, and return results.
 
-You ask ONE question at a time. You wait for the answer. You build each question on what was said before. You talk like a colleague, not like a configuration form.
+Your job is to capture enough project-specific knowledge in `specs/project.md` that every future agent — domain-analyst, sw-architect, security-engineer, backend-engineer — can answer context questions from that one file alone, without ever scanning `src/`.
+
+`specs/project.md` must answer:
+- What endpoints exist and what each one processes
+- What use case (command/query) each endpoint triggers (with file path)
+- What domain models are involved
+- What external services are wired
+- What cross-cutting decisions were made
+
+You ask ONE question at a time. You wait for the answer. You talk like a colleague.
 
 ---
 
 ## Input
 
-`$ARGUMENTS` — optional short description of the service. If provided, use it as context and ask only what it doesn't already answer. If empty, start the conversation from scratch.
+`$ARGUMENTS` — optional short description of the service. Use as context, ask only what it doesn't already answer.
 
 ---
 
@@ -28,23 +37,16 @@ You ask ONE question at a time. You wait for the answer. You build each question
 
 Before saying anything:
 1. Read `CLAUDE.md` to load the technical baseline and hexagonal architecture rules.
-2. Check if `specs/project.md` already exists. If it does, tell the developer: "Este servicio ya está inicializado — `specs/project.md` existe. Corre `/intake <descripción>` para empezar un nuevo feature." Then stop.
-3. Check if `specs/` directory exists. If not, create it.
+2. Check if `specs/project.md` already exists. If it does: "Este servicio ya está inicializado — `specs/project.md` existe. Corre `/intake <descripción>` para empezar un nuevo feature." Then stop.
+3. Ensure `specs/cr/` directory exists.
 
 ---
 
 ## Phase 1: Discovery Conversation
 
-Ask ONE question at a time. Wait for the reply. Reference the developer's actual words in follow-up questions. No bullet lists while asking — talk like a colleague.
+Ask ONE question at a time. Wait for the reply. No bullet lists while asking.
 
-**Do NOT ask about:**
-- Architecture (hexagonal, domain/application/adapters — already decided)
-- Auth mechanism (OIDC from Cloud Tasks — always, never Firebase)
-- Which framework (FastAPI + Python 3.13 — always)
-- Validation approach (Pydantic — always)
-- Anything covered in CLAUDE.md
-
-**Ask in this order, skipping anything already clear from `$ARGUMENTS`:**
+**Do NOT ask about:** architecture, OIDC auth (always required), Pydantic (always), or anything in CLAUDE.md.
 
 **Q1 — The service:**
 "¿Qué tipo de procesamiento AI/ML hace este servicio? ¿OCR, embeddings, clasificación, extracción de datos — o algo distinto?"
@@ -54,37 +56,54 @@ Wait for answer, then:
 **Q2 — The endpoints:**
 "¿Cuáles son las operaciones que va a exponer? Dame una lista de los endpoints — por ejemplo: process-document, generate-embedding, classify-intent..."
 
-Wait for answer, then:
+Wait for answer. Then for **each endpoint** listed, ask:
 
-**Q3 — Request pattern:**
+**Q3 — Endpoint detail (repeat for each endpoint):**
+"Para el endpoint `[endpoint-name]`: ¿qué recibe, qué procesa, y qué devuelve o persiste? Dame una descripción breve."
+
+(Ask Q3 once per endpoint, one at a time. After all endpoints, continue:)
+
+**Q4 — Request pattern:**
 "¿Este servicio solo recibe requests de Cloud Tasks de forma async, o también va a recibir llamadas síncronas directas de NestJS para respuestas inmediatas? ¿O ambos?"
 
 Wait for answer, then:
 
-**Q4 — Database:**
+**Q5 — Database:**
 "¿Va a necesitar Neon Postgres? Algunos servicios FastAPI solo leen y escriben en R2, sin base de datos relacional."
 
 Wait for answer, then:
 
-**Q5 — File storage:**
+**Q6 — File storage:**
 "¿Va a leer o escribir archivos en R2? ¿Para qué — resultados de procesamiento, documentos de entrada, modelos?"
 
 Wait for answer, then:
 
-**Q6 — GCP:**
+**Q7 — GCP:**
 "¿Ya tienes el GCP project creado? Si sí, dame el project ID."
 
 ---
 
 ## Phase 2: Silent Build (no output yet)
 
-Once you have all answers, silently assemble:
+Silently assemble:
 
-1. The service name (derive from the processing type if not stated — kebab-case)
-2. The endpoint list (normalized to kebab-case)
-3. Which infrastructure services are active
-4. Whether it's async-only (Cloud Tasks) or also sync (direct HTTP from NestJS)
-5. Any explicit decisions made during the conversation
+1. Service name (kebab-case)
+2. Endpoint list with descriptions
+3. Per-endpoint: inferred command/query names, domain models, expected file paths
+4. Infrastructure: which services are active
+5. Request pattern: async-only or also sync
+6. Decisions made during conversation
+
+**Infer per-endpoint structure from the description:**
+
+For each endpoint, derive:
+- **HTTP path:** `POST /internal/tasks/<endpoint-name>` (async) or `POST /internal/sync/<endpoint-name>` (sync)
+- **Command/Query class:** `<ProcessNoun>Command` or `<GetNoun>Query`
+- **Command/Query file:** `src/application/commands/<process_noun>_command.py` or `src/application/queries/<get_noun>_query.py`
+- **Domain model:** `src/domain/models/<noun>.py`
+- **Port interface:** `src/domain/ports/<noun>_repository.py` (if persisting)
+- **Adapter (outbound):** `src/adapters/outbound/<noun>_repository.py`
+- **Router file:** `src/adapters/inbound/<endpoint_name>.py`
 
 Do not output anything yet.
 
@@ -92,7 +111,7 @@ Do not output anything yet.
 
 ## Phase 3: Confirm and Produce
 
-Show a brief summary confirmation before writing anything:
+Show a confirmation summary before writing:
 
 ---
 **Listo. Voy a inicializar el servicio con esto:**
@@ -105,6 +124,9 @@ Show a brief summary confirmation before writing anything:
 **R2:** [sí — para: [uso] / no]
 **GCP Project:** [id / pending]
 
+**Navigation index (pre-poblado):**
+[For each endpoint, one line: `POST /internal/tasks/[name]` → [Command/Query class] → [domain models involved]]
+
 ¿Correcto? (responde con cualquier corrección, o "sí" para continuar)
 
 ---
@@ -115,13 +137,15 @@ Wait for confirmation. Incorporate any corrections.
 
 ## Phase 4: Scaffold
 
-Once confirmed, do everything silently and then report what was done.
+Once confirmed, do everything silently then report.
 
 ### 4.1 — Get the date
 
-Run `date +%Y-%m-%d` to get today's date for the project file.
+Run `date +%Y-%m-%d`.
 
 ### 4.2 — Write `specs/project.md`
+
+This is the most important output. It must be rich enough that any agent can answer all context questions from this file alone.
 
 ```markdown
 # Project Context — [service-name]
@@ -131,20 +155,62 @@ Run `date +%Y-%m-%d` to get today's date for the project file.
 | Nombre | [service-name] |
 | Plataforma | FastAPI + Python 3.13 |
 | Creado | [YYYY-MM-DD] |
+| Kit version | 2.0.0 |
 
 ## Objetivo del producto
-[2-3 sentences from what the developer said — what it processes, for whom (NestJS), what AI/ML operations it runs]
+[2-3 sentences — what it processes, for whom (NestJS/Cloud Tasks), what AI/ML operations it runs]
 
 ## Lo que este servicio NO hace
 - No valida tokens Firebase (solo OIDC de GCP Cloud Tasks)
-- No acepta requests directos de clientes (solo de NestJS o Cloud Tasks)
+- No acepta requests directos de clientes (solo de NestJS vía Cloud Tasks)
 - No contiene lógica de negocio principal — orquesta NestJS, procesa FastAPI
 [Any other explicit negative scope stated by the developer]
 
-## Módulos — v1
-| Módulo | Descripción | Ubicación | Estado |
-|--------|-------------|-----------|--------|
-[one row per endpoint/service — description inferred from context, location is app/services/<name>.py or app/api/v1/endpoints/<name>.py, status is "pending"]
+---
+
+## Endpoints — v1
+
+[Repeat this block for every endpoint:]
+
+### `POST /internal/tasks/[endpoint-name]` [or /internal/sync/ for sync]
+
+**Descripción:** [what it receives, what it processes, what it returns/persists]
+**Patrón:** [async Cloud Tasks / sync directo de NestJS]
+**Auth:** GCP OIDC (Cloud Tasks service account)
+
+**Use case:**
+| Clase | Archivo |
+|-------|---------|
+| `[ProcessNoun]Command` | `src/application/commands/[process_noun]_command.py` |
+
+**Domain models:**
+| Modelo | Archivo |
+|--------|---------|
+| `[Noun]` | `src/domain/models/[noun].py` |
+[one row per domain model involved]
+
+**Archivos clave:**
+- Router (inbound): `src/adapters/inbound/[endpoint_name].py`
+- Port (outbound): `src/domain/ports/[noun]_repository.py` (if persisting)
+- Adapter (outbound): `src/adapters/outbound/[noun]_repository.py` (if persisting)
+
+---
+
+[end endpoint block — repeat for each endpoint]
+
+## Navigation Index
+
+> Use this index to jump directly to any file. Do NOT scan `src/` — read this index first.
+
+| Concepto | Archivo | Notas |
+|----------|---------|-------|
+[One row per key file across all endpoints]
+| OIDC validation | `src/config/security.py` | Validates GCP service account token |
+| Settings | `src/config/settings.py` | Pydantic BaseSettings — all env vars |
+| Logging | `src/config/logging.py` | Structured JSON for Cloud Logging |
+| Main router | `src/adapters/inbound/router.py` | Includes all endpoint routers |
+| App entry | `src/main.py` | FastAPI app + lifespan |
+| Env vars | `.env.example` | All required variables |
 
 ## Servicios externos configurados
 | Servicio | Uso | Configurado |
@@ -157,45 +223,57 @@ Run `date +%Y-%m-%d` to get today's date for the project file.
 ## Patrón de requests
 [async Cloud Tasks únicamente / también HTTP sync directo de NestJS / ambos]
 
-## Decisiones tomadas en este proyecto
-[Any decisions made during the conversation, or "ninguna — seguir defaults de CLAUDE.md"]
+## Decisiones de arquitectura en este proyecto
+[Decisions made during /init, or "Ninguna — seguir defaults de CLAUDE.md"]
 
-## Module Map (se actualiza con cada /build completado)
-| Módulo | Archivos clave | Handlers | Endpoints expuestos |
-|--------|---------------|----------|---------------------|
-[one empty row per endpoint/service]
+## CR History
+| CR-ID | Tipo | Endpoint | Descripción | Estado |
+|-------|------|----------|-------------|--------|
+[Se llena automáticamente con cada /close completado]
 ```
 
 ### 4.3 — Create folder structure
 
-Create these directories (use `mkdir -p`):
-
 ```
-app/api/v1/endpoints/
-app/core/
-app/services/
-app/models/
-app/workers/
-specs/
+src/domain/models/
+src/domain/ports/
+src/domain/exceptions.py
+src/application/commands/
+src/application/queries/
+src/adapters/inbound/
+src/adapters/outbound/
+src/config/
+specs/cr/
 ```
 
-**Endpoint files — one per endpoint listed in v1:**
+**Endpoint router files — one per endpoint in v1:**
 
-For each endpoint named `<endpoint-name>` in the list, create `app/api/v1/endpoints/<endpoint_name>.py`:
+For each endpoint `<endpoint-name>`, create `src/adapters/inbound/<endpoint_name>.py`:
 ```python
-# app/api/v1/endpoints/<endpoint_name>.py
-# Endpoint: POST /internal/tasks/<endpoint-name>
+# src/adapters/inbound/<endpoint_name>.py
+# POST /internal/tasks/<endpoint-name>
 # Handler for [description from conversation]
 # TODO: implement after running /intake <endpoint-name>
+from fastapi import APIRouter, Depends
+from src.config.security import verify_oidc_token
+
+router = APIRouter()
+
+@router.post("/<endpoint-name>")
+async def handle(
+    # TODO: add Pydantic request body
+    _: str = Depends(verify_oidc_token),
+):
+    raise NotImplementedError
 ```
 
-(Use underscores for Python file names, e.g. `process_document.py` for endpoint `process-document`.)
+(Use underscores for Python file names: `process_document.py` for `process-document`.)
 
-**Core files:**
+### 4.4 — Core config files
 
-`app/core/config.py`:
+**`src/config/settings.py`:**
 ```python
-# app/core/config.py
+# src/config/settings.py
 from pydantic_settings import BaseSettings
 
 
@@ -223,25 +301,23 @@ class Settings(BaseSettings):
 settings = Settings()
 ```
 
-`app/core/security.py`:
+**`src/config/security.py`:**
 ```python
-# app/core/security.py
+# src/config/security.py
 # OIDC token validation for Cloud Tasks requests.
 # Validates that the request comes from the authorized GCP service account.
-# See ARCHITECTURE_BACKEND.md § 5 for the full auth flow.
-# TODO: implement OIDC validation using google-auth
 from fastapi import HTTPException, Request
 
 
 async def verify_oidc_token(request: Request) -> str:
     """Verify GCP OIDC token from Cloud Tasks. Returns the service account email."""
-    # TODO: implement
+    # TODO: implement using google-auth
     raise NotImplementedError
 ```
 
-`app/core/logging.py`:
+**`src/config/logging.py`:**
 ```python
-# app/core/logging.py
+# src/config/logging.py
 # Structured JSON logging for Cloud Logging.
 import logging
 import sys
@@ -255,34 +331,45 @@ def configure_logging() -> None:
     )
 ```
 
-**Router file:**
-
-`app/api/v1/router.py`:
+**`src/domain/exceptions.py`:**
 ```python
-# app/api/v1/router.py
+# src/domain/exceptions.py
+# Domain exceptions — never reference HTTP status codes here.
+
+class DomainError(Exception):
+    """Base class for all domain errors."""
+
+class NotFoundError(DomainError):
+    pass
+
+class ValidationError(DomainError):
+    pass
+```
+
+**`src/adapters/inbound/router.py`:**
+```python
+# src/adapters/inbound/router.py
 from fastapi import APIRouter
 
 # TODO: import and include one router per endpoint
-# from app.api.v1.endpoints import <endpoint_name>
+# from src.adapters.inbound import <endpoint_name>
 
 router = APIRouter()
 
 # router.include_router(<endpoint_name>.router, prefix="/<endpoint-name>", tags=["<endpoint-name>"])
 ```
 
-**Main file:**
-
-`app/main.py`:
+**`src/main.py`:**
 ```python
-# app/main.py
+# src/main.py
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
 
-from app.api.v1.router import router
-from app.core.config import settings
-from app.core.logging import configure_logging
+from src.adapters.inbound.router import router
+from src.config.settings import settings
+from src.config.logging import configure_logging
 
 
 @asynccontextmanager
@@ -300,12 +387,10 @@ app.include_router(router, prefix="/internal/tasks")
 
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=settings.port, reload=False)
+    uvicorn.run("src.main:app", host="0.0.0.0", port=settings.port, reload=False)
 ```
 
-(Replace `[service-name]` with the actual service name.)
-
-### 4.4 — Write `.env.example`
+### 4.5 — Write `.env.example`
 
 ```bash
 # .env.example
@@ -334,15 +419,12 @@ GOOGLE_CLOUD_PROJECT=
 
 # Cloud Tasks OIDC auth
 # The service account email that Cloud Tasks uses to call this service.
-# This service validates every incoming request against this value.
 ALLOWED_SERVICE_ACCOUNT=
 ```
 
-If the developer confirmed GCP project ID, fill `GOOGLE_CLOUD_PROJECT=<id>`.
-If the developer said no Neon, add a comment `# not used in this service` to the DATABASE_URL line.
-If the developer said no R2, add a comment `# not used in this service` to the R2 block.
+Fill in confirmed values. For services not in use, keep the key and add `# not used in this service`.
 
-### 4.5 — Write `requirements.txt`
+### 4.6 — Write `requirements.txt`
 
 ```
 fastapi
@@ -353,13 +435,13 @@ google-auth
 google-cloud-tasks
 ```
 
-If the developer confirmed Neon/Postgres, add:
+If Neon/Postgres confirmed, add:
 ```
 sqlalchemy
 asyncpg
 ```
 
-If the developer confirmed R2, add:
+If R2 confirmed, add:
 ```
 boto3
 ```
@@ -368,27 +450,26 @@ boto3
 
 ## Phase 5: Handoff
 
-After all files and folders are created, report:
+```
+Servicio inicializado.
 
----
-**Servicio inicializado.**
+Archivos creados:
+- specs/project.md — memoria permanente del servicio (Navigation Index pre-poblado)
+- src/main.py — entry point con lifespan y router
+- src/adapters/inbound/router.py — router principal
+- src/adapters/inbound/[endpoints] — un archivo por endpoint
+- src/config/settings.py, security.py, logging.py
+- src/domain/exceptions.py
+- .env.example — variables de entorno
+- requirements.txt — dependencias base
 
-**Archivos creados:**
-- `specs/project.md` — memoria permanente del servicio
-- `app/main.py` — entry point con lifespan y router
-- `app/api/v1/router.py` — router principal
-- `app/api/v1/endpoints/` — [list of endpoint files]
-- `app/core/config.py`, `app/core/security.py`, `app/core/logging.py`
-- `.env.example` — variables de entorno
-- `requirements.txt` — dependencias base
+Estructura creada:
+- src/domain/models/ — modelos de dominio
+- src/domain/ports/ — interfaces de repositorio
+- src/application/commands/ — comandos (writes)
+- src/application/queries/ — queries (reads)
+- src/adapters/outbound/ — repositorios concretos
 
-**Estructura creada:**
-- `app/services/` — servicios de dominio (vacía — se puebla con /build)
-- `app/models/` — modelos Pydantic (vacía — se puebla con /build)
-- `app/workers/` — workers async (vacía — se puebla si aplica)
-
-**Siguiente paso:** corre `/intake <descripción del primer endpoint>` para empezar.
-
-Por ejemplo: `/intake implementar el endpoint process-document — recibe un document_url desde Cloud Tasks, hace OCR con [librería], y escribe el resultado en R2`
-
----
+Siguiente paso: /intake <descripción del primer endpoint>
+Ejemplo: /intake implementar process-document — recibe document_url desde Cloud Tasks, hace OCR, escribe resultado en R2
+```
