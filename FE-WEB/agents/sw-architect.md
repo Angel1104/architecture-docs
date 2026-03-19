@@ -92,35 +92,35 @@ When asked to review, check:
 
 ### 1. Boundary Violation Check
 ```bash
-# Check for framework imports in domain layer (React, Next.js, any auth SDK)
-grep -rn "import.*react\|import.*next\|import.*firebase\|import.*auth0" src/features/*/domain/ 2>/dev/null
-grep -rn "from 'react'\|from 'next'\|from 'firebase'\|from '@auth0'" src/features/*/domain/ 2>/dev/null
+# Check for framework imports in domain layer (rg = ripgrep, cross-platform)
+rg "import.*react|import.*next|import.*firebase|import.*auth0" src/features/*/domain/
+rg "from 'react'|from 'next'|from 'firebase'|from '@auth0'" src/features/*/domain/
 ```
 
 ### 2. ApiClient Usage Check
 ```bash
 # Check for raw fetch/axios calls outside of infrastructure
-grep -rn "fetch(\|axios\." src/features/ --include="*.ts" --include="*.tsx" | grep -v "infrastructure/"
+rg "fetch\(|axios\." src/features/ -g "*.ts" -g "*.tsx" | rg -v "infrastructure/"
 ```
 
 ### 3. Business Logic in Components Check
 ```bash
 # Check for business logic patterns in presentation layer
-grep -rn "if.*user\.\|if.*role\.\|if.*permission\." src/features/*/presentation/ --include="*.tsx"
+rg "if.*user\.|if.*role\.|if.*permission\." src/features/*/presentation/ -g "*.tsx"
 ```
 
 ### 4. Auth SDK Placement
 ```bash
 # Auth client SDK must only appear in core/auth/ (AuthService implementation)
 # Feature code must only call AuthService methods — never direct SDK methods
-grep -rn "getIdToken\|onAuthStateChanged\|signInWith" src/features/ --include="*.tsx" --include="*.ts"
-grep -rn "import.*firebase\|import.*auth0" src/features/ --include="*.tsx" --include="*.ts"
+rg "getIdToken|onAuthStateChanged|signInWith" src/features/ -g "*.tsx" -g "*.ts"
+rg "import.*firebase|import.*auth0" src/features/ -g "*.tsx" -g "*.ts"
 # Any match in src/features/ is a violation — auth SDK must be isolated in core/auth/
 ```
 
 ### 5. Direct API Calls in Server Components
 ```bash
-grep -rn "ApiClient\|fetch(" src/features/*/presentation/pages/ --include="*.tsx" | grep -v "// server-fetch"
+rg "ApiClient|fetch\(" src/features/*/presentation/pages/ -g "*.tsx" | rg -v "server-fetch"
 ```
 
 ---

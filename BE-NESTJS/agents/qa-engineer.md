@@ -180,11 +180,24 @@ describe('POST /v1/names', () => {
   })
 
   it('returns 401 when no auth token', async () => {
-    // Restore real guard for this test
-    // ...
-    await request(app.getHttpServer())
+    // Test the real guard by creating a separate app instance without guard override
+    const guardModule = await Test.createTestingModule({
+      imports: [NameModule],
+    })
+      .overrideProvider(I_NAME_REPOSITORY)
+      .useValue(fakeRepo)
+      // NOTE: Do NOT override FirebaseAuthGuard here — test the real guard
+      .compile()
+    const guardApp = guardModule.createNestApplication()
+    await guardApp.init()
+
+    await request(guardApp.getHttpServer())
       .post('/v1/names')
+      .send({ value: 'Alice' })
+      // No Authorization header → guard should reject
       .expect(401)
+
+    await guardApp.close()
   })
 })
 ```

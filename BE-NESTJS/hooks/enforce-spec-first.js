@@ -3,13 +3,20 @@
  * NestJS spec-first enforcement hook.
  *
  * Runs on PreToolUse for Write and Edit tools.
- * Blocks writes to src/ implementation code if no corresponding
+ * Blocks writes to src/modules/ implementation code if no corresponding
  * reviewed spec exists in specs/cr/.
  *
  * Hook protocol:
  *   - Reads JSON from stdin: {"tool_name": "...", "tool_input": {"file_path": "...", ...}}
  *   - Exit 0 silently to allow
  *   - Print JSON with permissionDecision: "deny" to block
+ *
+ * Enforcement logic:
+ *   - No specs/cr/ dir         → DENY
+ *   - No spec files at all     → DENY
+ *   - Matching spec found + APPROVED → ALLOW
+ *   - Matching spec found + not APPROVED → WARN (allow, but flag)
+ *   - No matching spec found   → DENY (module has no spec — must create one)
  */
 
 const fs = require('fs')
@@ -211,26 +218,16 @@ async function main() {
       )
     }
   } else {
-    // No matching spec — check if ANY reviewed spec exists (soft enforcement)
-    const hasAnyReviewed = allSpecs.some(sf =>
-      isSpecReviewed(path.join(specsDir, sf))
+    // P0 FIX: No matching spec for this specific module → DENY always.
+    // A reviewed spec for a different module does not cover this one.
+    deny(
+      'SPEC-FIRST VIOLATION: No spec found for this module.\n\n' +
+      `Inferred module names: ${[...moduleNames].sort().join(', ')}\n` +
+      `Existing specs: ${allSpecs.sort().join(', ') || '(none)'}\n\n` +
+      'Every module requires its own reviewed spec before implementation.\n' +
+      'Run `/intake <description>` to create a CR item, then `/spec <cr-id>`.\n\n' +
+      `Blocked write to: ${filePath}`
     )
-    if (hasAnyReviewed) {
-      warn(
-        'SPEC-FIRST WARNING: No spec matches this file.\n' +
-        `Inferred module names: ${[...moduleNames].sort().join(', ')}\n` +
-        `Existing specs: ${allSpecs.sort().join(', ')}\n` +
-        'Consider creating a spec for this module with `/intake <description>`.\n' +
-        `Proceeding with write to: ${filePath}`
-      )
-    } else {
-      deny(
-        'SPEC-FIRST VIOLATION: No reviewed specs found.\n\n' +
-        'Specs exist but none have APPROVED status.\n' +
-        "Run '/spec <cr-id>' to review a spec before implementing.\n\n" +
-        `Blocked write to: ${filePath}`
-      )
-    }
   }
 }
 

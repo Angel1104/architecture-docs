@@ -86,41 +86,41 @@ When asked to review Flutter code, check:
 
 ### 1. Domain Layer Purity
 ```bash
-# No Flutter SDK, Dio, or Firebase in domain
-grep -rn "import 'package:flutter\|import 'package:dio\|import 'package:firebase" lib/features/*/domain/ 2>/dev/null
-grep -rn "import 'package:riverpod\|import 'package:hooks_riverpod" lib/features/*/domain/ 2>/dev/null
+# No Flutter SDK, Dio, or Firebase in domain (rg = ripgrep, cross-platform)
+rg "import 'package:flutter|import 'package:dio|import 'package:firebase" lib/features/*/domain/
+rg "import 'package:riverpod|import 'package:hooks_riverpod" lib/features/*/domain/
 ```
 Any match is a boundary violation.
 
 ### 2. Direct HTTP Calls Outside Data Layer
 ```bash
 # No Dio usage in presentation or domain
-grep -rn "Dio()\|dio\.get\|dio\.post\|ApiClient" lib/features/*/presentation/ 2>/dev/null
-grep -rn "Dio()\|dio\.get\|dio\.post\|ApiClient" lib/features/*/domain/ 2>/dev/null
+rg "Dio\(\)|dio\.get|dio\.post|ApiClient" lib/features/*/presentation/
+rg "Dio\(\)|dio\.get|dio\.post|ApiClient" lib/features/*/domain/
 ```
 
 ### 3. Controllers Not Calling Datasources Directly
 ```bash
 # Controllers should only call use cases, not datasources or repositories
-grep -rn "DataSource\|Repository" lib/features/*/presentation/controllers/ 2>/dev/null
+rg "DataSource|Repository" lib/features/*/presentation/controllers/
 ```
 
 ### 4. State Classes Using AppError
 ```bash
 # State error variants should use AppError, not String
-grep -rn "error(String\|error(message:" lib/features/*/presentation/ 2>/dev/null
+rg "error\(String|error\(message:" lib/features/*/presentation/
 ```
 
 ### 5. AppAuthState Guard
 ```bash
 # GoRouter redirect must handle initializing state
-grep -n "AppAuthState.initializing\|initializing" lib/app/router/ 2>/dev/null
+rg "AppAuthState.initializing|initializing" lib/app/router/
 ```
 
 ### 6. No Hive or Local Persistence
 ```bash
 # No persistence packages in v1
-grep -rn "import 'package:hive\|import 'package:sqflite\|import 'package:drift\|import 'package:isar" lib/ 2>/dev/null
+rg "import 'package:hive|import 'package:sqflite|import 'package:drift|import 'package:isar" lib/
 ```
 
 ---

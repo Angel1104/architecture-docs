@@ -159,12 +159,14 @@ import { Name } from '../../domain/entities/Name'
 import { PaginatedResponse, PaginationParams } from '@/shared/interface/pagination.types'
 
 export class FakeNameRepository implements INameRepository {
-  private store: Name[] = []
+  private store: Map<string, Name> = new Map()
 
-  async findById(id: string) { return this.store.find(n => n.id === id) ?? null }
+  async findById(id: string): Promise<Name | null> {
+    return this.store.get(id) ?? null
+  }
 
   async findByTenant(params: PaginationParams): Promise<PaginatedResponse<Name>> {
-    const all = this.store.filter(n => n.tenantId === params.tenantId)
+    const all = [...this.store.values()].filter(n => n.tenantId === params.tenantId)
     const limit = params.limit ?? 20
     const startIdx = params.cursor ? all.findIndex(n => n.id === params.cursor) + 1 : 0
     const slice = all.slice(startIdx, startIdx + limit + 1)
@@ -173,17 +175,28 @@ export class FakeNameRepository implements INameRepository {
     return { data, nextCursor: hasMore ? data[data.length - 1].id : null, hasMore }
   }
 
-  async save(name: Name) { this.store.push(name) }
-  async delete(id: string) { this.store = this.store.filter(n => n.id !== id) }
+  async save(name: Name): Promise<void> {
+    this.store.set(name.id, name)
+  }
+
+  async delete(id: string, tenantId: string): Promise<void> {
+    const existing = this.store.get(id)
+    if (existing && existing.tenantId === tenantId) {
+      this.store.delete(id)
+    }
+  }
 
   async existsByValue(tenantId: string, value: string): Promise<boolean> {
-    return this.store.some(n => n.tenantId === tenantId && n.value === value)
+    return [...this.store.values()].some(n => n.tenantId === tenantId && n.value === value)
   }
 
   // Test helpers
-  findAll() { return this.store }
-  seed(partial: Partial<Name>) { this.store.push({ id: `seed-${this.store.length + 1}`, ...partial } as Name) }
-  clear() { this.store = [] }
+  findAll(): Name[] { return [...this.store.values()] }
+  seed(partial: Partial<Name>): void {
+    const id = partial.id ?? `seed-${this.store.size + 1}`
+    this.store.set(id, { id, ...partial } as Name)
+  }
+  clear(): void { this.store.clear() }
 }
 ```
 

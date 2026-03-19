@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Next.js spec-first enforcement hook.
+ * Flutter spec-first enforcement hook.
  *
  * Runs on PreToolUse for Write and Edit tools.
- * Blocks writes to src/features/ implementation code if no corresponding
+ * Blocks writes to lib/features/ implementation code if no corresponding
  * reviewed spec exists in specs/cr/.
  *
  * Hook protocol:
@@ -17,6 +17,9 @@
  *   - Matching spec + APPROVED → ALLOW
  *   - Matching spec + not APPROVED → WARN (allow, but flag)
  *   - No matching spec found   → DENY (feature has no spec — must create one)
+ *
+ * NOTE: Rewritten from Dart to Node.js — Dart requires the full SDK in PATH
+ * to execute as a shell hook. Node.js is always available in the Claude Code env.
  */
 
 const fs = require('fs')
@@ -29,19 +32,22 @@ function normalizePath(p) {
 }
 
 /**
- * Heuristic: extract possible feature names from a src/features/ file path.
+ * Heuristic: extract possible feature names from a lib/features/ file path.
+ *
+ * Flutter uses snake_case for directories, so we normalize to kebab-case.
  *
  * Examples:
- *   src/features/user-profile/domain/entities/User.ts → ["user-profile", "user"]
- *   src/features/auth/application/hooks/useAuth.ts → ["auth"]
+ *   lib/features/user_profile/domain/entities/user_profile.dart → ["user-profile", "user"]
+ *   lib/features/auth/presentation/screens/login_screen.dart → ["auth"]
  */
 function inferFeatureNames(filePath) {
   const normalized = normalizePath(filePath)
   const names = new Set()
 
-  const match = normalized.match(/src\/features\/([^/]+)\//)
+  const match = normalized.match(/lib\/features\/([^/]+)\//)
   if (match) {
     const featureSegment = match[1]
+    // Normalize snake_case → kebab-case (Flutter convention)
     const kebab = featureSegment.replace(/_/g, '-')
     names.add(kebab)
     const parts = kebab.split('-')
@@ -52,7 +58,7 @@ function inferFeatureNames(filePath) {
     return names
   }
 
-  // Fallback: use the file basename
+  // Fallback: use the file basename (strip .dart extension)
   const basename = path.basename(filePath, path.extname(filePath))
   const kebab = basename.replace(/_/g, '-')
   names.add(kebab)
@@ -157,12 +163,12 @@ async function main() {
 
   const normalizedPath = normalizePath(filePath)
 
-  // Only enforce for src/features/ paths
-  if (!/(?:^|\/)src\/features\//.test(normalizedPath)) process.exit(0)
+  // Only enforce for lib/features/ paths
+  if (!/(?:^|\/)lib\/features\//.test(normalizedPath)) process.exit(0)
 
-  // Skip generated files
+  // Skip build_runner generated files — never block codegen outputs
   const basename = path.basename(filePath)
-  if (basename.endsWith('.d.ts')) process.exit(0)
+  if (basename.endsWith('.g.dart') || basename.endsWith('.freezed.dart')) process.exit(0)
 
   // Locate project directory
   const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd()
@@ -172,7 +178,7 @@ async function main() {
   if (!fs.existsSync(specsDir)) {
     deny(
       'SPEC-FIRST VIOLATION: No specs/cr/ directory found.\n\n' +
-      'The Next.js SDM kit requires a specification before implementation.\n' +
+      'The Flutter SDM kit requires a specification before implementation.\n' +
       'Run `/intake <description>` to create a CR item, then `/spec <cr-id>` to create a spec.\n\n' +
       `Blocked write to: ${filePath}`
     )
@@ -185,7 +191,7 @@ async function main() {
   if (allSpecs.length === 0) {
     deny(
       'SPEC-FIRST VIOLATION: No spec files found in specs/cr/.\n\n' +
-      'The Next.js SDM kit requires a reviewed specification before writing implementation code.\n' +
+      'The Flutter SDM kit requires a reviewed specification before writing implementation code.\n' +
       'Run `/intake <description>` then `/spec <cr-id>` to create and review a spec.\n\n' +
       `Blocked write to: ${filePath}`
     )

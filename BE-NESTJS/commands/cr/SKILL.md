@@ -154,7 +154,11 @@ All other decisions are made automatically.
 ## Stage 4: CLOSE
 
 1. Verify all acceptance criteria are met
-2. Confirm all tests pass: `npx jest --runInBand`
+2. Re-run the full test suite now (mandatory — catches any changes made after build):
+   ```bash
+   npx jest --runInBand
+   ```
+   If any test fails: stop and present the failure. Do not proceed to close with a red suite.
 3. Assess lessons learned — flag only if genuine and actionable
 4. Identify any follow-up CRs from deferred items
 5. Present closure summary:

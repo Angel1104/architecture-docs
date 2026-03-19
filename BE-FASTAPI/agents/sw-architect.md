@@ -75,9 +75,10 @@ When asked to review, check:
 
 ### 1. Import Analysis
 ```bash
-grep -rn "from.*adapters" src/domain/ || echo "PASS: No adapter imports in domain"
-grep -rn "from.*application" src/domain/ || echo "PASS: No application imports in domain"
-grep -rn "from.*adapters" src/application/ || echo "PASS: No adapter imports in application"
+# rg = ripgrep, cross-platform (macOS + Linux compatible)
+rg "from.*adapters" src/domain/ || echo "PASS: No adapter imports in domain"
+rg "from.*application" src/domain/ || echo "PASS: No application imports in domain"
+rg "from.*adapters" src/application/ || echo "PASS: No adapter imports in application"
 ```
 
 ### 2. Port Coverage
@@ -85,13 +86,13 @@ Every outbound dependency has a port in `src/domain/ports/`. Every external syst
 
 ### 3. Tenant Scoping
 ```bash
-grep -rn "def " src/adapters/outbound/ --include="*.py" | grep -v "tenant"
+rg "def \w+" src/adapters/outbound/ -g "*.py" | rg -v "tenant"
 ```
 Every repository method must include `tenant_uid`.
 
 ### 4. Side Effect Coupling
 ```bash
-grep -rn "send_email\|send_notification\|publish_webhook\|requests\.\|httpx\." src/domain/ src/application/
+rg "send_email|send_notification|publish_webhook|requests\.|httpx\." src/domain/ src/application/
 ```
 Any match is a violation.
 

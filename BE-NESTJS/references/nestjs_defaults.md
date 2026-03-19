@@ -164,8 +164,10 @@ await this.prisma.withTenant(tenantId, async (tx) => {
 
 ### Rules
 
-- **Never query multi-tenant tables without `withTenant()`** — even for reads
+- **Never query multi-tenant tables without `withTenant()`** — reads, writes, AND deletes
+- **Deletes require `withTenant()` too** — `prisma.name.delete({ where: { id } })` without RLS context allows cross-tenant deletes if the caller knows a foreign UUID
 - **`tenant_id` source**: Always from `req.user.tenantId` (the authenticated Neon user) — never from request body or params
+- **Repository delete signature**: always `delete(id: string, tenantId: string)` — tenantId is required, never optional
 - **RLS policies** must be applied to Postgres tables from the first migration
 - **Non-tenant tables** (system configs, catalogs) do not need `withTenant()`
 
@@ -453,14 +455,21 @@ Endpoint receives task: `POST /internal/tasks/process-document` (OIDC guard).
 Use when the client needs the AI/ML result synchronously (e.g., document classification that determines next UI step):
 
 ```typescript
-// In a use case — wait for FastAPI result:
+// In a use case — wait for FastAPI result (always with explicit timeout):
 const result = await this.fastApiService.post<ClassifyResult>(
   '/internal/sync/classify-document',
-  { documentId, fileKey, tenantId: input.tenantId }
+  { documentId, fileKey, tenantId: input.tenantId },
+  { timeout: 10_000 }  // 10s hard limit — never omit on sync calls
 )
 ```
 
 Endpoint at FastAPI: `POST /internal/sync/classify-document` (OIDC guard).
+
+**Timeout rules for sync FastAPI calls:**
+- Always set `timeout: 10_000` (10 seconds) on every sync call — no exceptions
+- If FastAPI may take longer, use async Cloud Tasks instead (Pattern A)
+- A missing timeout on a sync call can hang a Cloud Run thread and cascade to service degradation
+- FastAPI must also enforce its own internal timeout at the handler level (`asyncio.wait_for`)
 
 ### Decision table
 

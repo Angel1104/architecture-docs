@@ -38,9 +38,9 @@ Verify the build outcome against the CR intent:
 
 1. Read the CR item — load the original intent and assessment
 2. Read the approved spec — load all acceptance criteria
-3. Run the full test suite:
+3. Run the full test suite (not just CR-specific tests — catch regressions too):
    ```bash
-   pytest tests/<cr-id>/ -v
+   pytest --tb=short -q
    ```
 4. For each AC in the spec, confirm:
    - Is there a test covering it?

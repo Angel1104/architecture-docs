@@ -21,27 +21,26 @@ You are a software architect specializing in NestJS hexagonal architecture, mult
 
 **Domain layer must be pure TypeScript:**
 ```bash
-# Detect framework imports in domain
-grep -r "from '@nestjs" src/modules/*/domain/
-grep -r "from '@prisma" src/modules/*/domain/
-grep -r "from 'firebase" src/modules/*/domain/
-grep -r "HttpException\|HttpStatus" src/modules/*/domain/
+# Detect framework imports in domain (rg = ripgrep, cross-platform)
+rg "from '@nestjs" src/modules/*/domain/
+rg "from '@prisma" src/modules/*/domain/
+rg "from 'firebase" src/modules/*/domain/
+rg "HttpException|HttpStatus" src/modules/*/domain/
 ```
 
 Every match is a **CRITICAL** violation.
 
 **Application layer must only import from domain:**
 ```bash
-# Detect infrastructure imports in application use cases
-grep -r "PrismaService\|PrismaClient\|@prisma/client" src/modules/*/application/
-grep -r "FirebaseAdmin\|firebase-admin" src/modules/*/application/
-grep -r "@nestjs/common\|@Controller\|@Injectable" src/modules/*/application/
+rg "PrismaService|PrismaClient|@prisma/client" src/modules/*/application/
+rg "FirebaseAdmin|firebase-admin" src/modules/*/application/
+rg "@nestjs/common|@Controller|@Injectable" src/modules/*/application/
 ```
 
 **Interface layer must not import infrastructure directly:**
 ```bash
-grep -r "PrismaService\|PrismaClient" src/modules/*/interface/
-grep -r "firebase-admin" src/modules/*/interface/
+rg "PrismaService|PrismaClient" src/modules/*/interface/
+rg "firebase-admin" src/modules/*/interface/
 ```
 
 ### 2. Port Contract Compliance
@@ -50,19 +49,19 @@ For each module, verify:
 - Repository interfaces live in `domain/ports/` as TypeScript interfaces (not classes)
 - Infrastructure implementations live in `infrastructure/adapters/` and implement the interface
 - Use cases only depend on the interface (via constructor injection), never on the concrete class
-- All repository methods accept the context they need (not `tenant_id` directly — via RLS transaction)
+- Delete methods always accept `tenantId` — no delete without RLS context
 
 ### 3. RLS Pattern Compliance
 
 Every query to a multi-tenant table must use `prisma.withTenant(tenantId, ...)`:
 
 ```bash
-# Find direct Prisma calls that bypass withTenant
-grep -rn "prisma\.\w\+\.\(findMany\|findFirst\|findUnique\|create\|update\|delete\)" src/modules/
-# Above calls are fine ONLY inside a withTenant callback or for non-tenant-scoped tables
+# Find raw Prisma model calls that may bypass withTenant
+# These are OK only inside a withTenant callback or for non-tenant tables
+rg "this\.prisma\.\w+\.(findMany|findFirst|findUnique|create|update|delete|upsert)\(" src/modules/
 ```
 
-Violations where `withTenant` is not used for tenant-scoped data are **CRITICAL**.
+Violations where `withTenant` is not used for tenant-scoped data (including **deletes**) are **CRITICAL**.
 
 ### 4. Controller Purity
 
@@ -74,7 +73,7 @@ Controllers must only:
 
 ```bash
 # Detect business logic in controllers (rough check)
-grep -n "if\|switch\|for\|while" src/modules/*/interface/controllers/*.ts
+rg "if\s|switch\s|for\s|while\s" src/modules/*/interface/controllers/
 ```
 
 Business logic in controllers is a **WARNING** — extract to use case.
@@ -85,7 +84,7 @@ Side effects from use cases must go through `CloudTasksService`:
 
 ```bash
 # Detect direct side-effect service calls from use cases
-grep -rn "sendEmail\|sendNotification\|sendWebhook" src/modules/*/application/use-cases/
+rg "sendEmail|sendNotification|sendWebhook" src/modules/*/application/use-cases/
 ```
 
 Direct side-effect calls from use cases (not through Cloud Tasks) are a **WARNING**.
@@ -95,7 +94,7 @@ Direct side-effect calls from use cases (not through Cloud Tasks) are a **WARNIN
 FastAPI endpoints must be called with OIDC auth only (never Firebase JWT):
 
 ```bash
-grep -rn "FASTAPI_INTERNAL_URL\|fastapi" src/modules/*/
+rg "FASTAPI_INTERNAL_URL|fastapi" src/modules/
 ```
 
 Any FastAPI call that doesn't go through the OIDC-protected internal channel is **CRITICAL**.

@@ -94,7 +94,7 @@ export interface INameRepository {
   findById(id: string): Promise<Name | null>
   findByTenant(params: PaginationParams): Promise<PaginatedResponse<Name>>
   save(name: Name): Promise<void>
-  delete(id: string): Promise<void>
+  delete(id: string, tenantId: string): Promise<void>
   existsByValue(tenantId: string, value: string): Promise<boolean>
 }
 
@@ -197,8 +197,10 @@ export class PrismaNameRepository implements INameRepository {
     })
   }
 
-  async delete(id: string): Promise<void> {
-    await this.prisma.name.delete({ where: { id } })
+  async delete(id: string, tenantId: string): Promise<void> {
+    await this.prisma.withTenant(tenantId, async (tx) => {
+      await tx.name.delete({ where: { id } })
+    })
   }
 
   async existsByValue(tenantId: string, value: string): Promise<boolean> {
